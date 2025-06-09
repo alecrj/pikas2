@@ -32,7 +32,7 @@ export interface Layer {
   blendMode: BlendMode;
   data: any; // Canvas image data or vector data
   order: number;
-  strokes: Stroke[]; // FIXED: Now included by default, as your app expects
+  strokes: Stroke[];
 }
 
 export type BlendMode = 
@@ -57,10 +57,11 @@ export interface DrawingState {
   historyIndex: number;
   canvas: CanvasState;
   selection?: Selection;
-  // canvasSize?: { width: number; height: number }; // If you want, but not required
-  // pan?: { x: number; y: number };
-  // zoom?: number;
-  backgroundColor?: string;
+  // FIXED: Added missing properties that code expects
+  canvasSize: { width: number; height: number };
+  pan: { x: number; y: number };
+  zoom: number;
+  backgroundColor: string;
 }
 
 export interface CanvasState {
@@ -178,6 +179,16 @@ export interface LessonState {
   overallProgress: number;
   isPaused: boolean;
   pausedAt?: Date;
+}
+
+export interface LessonProgress {
+  lessonId: string;
+  completed: boolean;
+  completedAt?: Date;
+  bestScore: number;
+  attempts: number;
+  totalTimeSpent: number;
+  xpEarned: number;
 }
 
 export interface Lesson {
@@ -313,8 +324,12 @@ export interface SkillTreeProgress {
   lastAccessedAt: Date;
 }
 
+// FIXED: Extended ValidationRule types to match SkillTreeManager usage
 export interface ValidationRule {
-  type: 'stroke_count' | 'color_match' | 'shape_accuracy' | 'completion';
+  type: 'stroke_count' | 'color_match' | 'shape_accuracy' | 'completion' | 
+        'shape_construction' | 'line_detection' | 'point_placement' | 'perspective_lines' |
+        'shape_completion' | 'shading_element' | 'shading_gradation' | 'cast_shadow' |
+        'cylindrical_shading' | 'form_construction';
   params: any;
   threshold: number;
 }
@@ -438,21 +453,23 @@ export type BrushCategory =
   | 'texture'
   | 'special';
 
-// FIX: BrushSettings - include minSize and maxSize as numbers, to match code
+// FIXED: BrushSettings - Made compatible with both number and RangeValue usage
 export interface BrushSettings {
-  size: RangeValue;
-  minSize: number; // <--- ADDED for code compatibility
-  maxSize: number; // <--- ADDED for code compatibility
-  opacity: RangeValue;
-  flow: RangeValue;
-  hardness: RangeValue;
-  spacing: RangeValue;
-  scatter?: RangeValue;
+  size: number; // Changed from RangeValue to number for simplicity
+  minSize: number;
+  maxSize: number;
+  opacity: number; // Changed from RangeValue to number for simplicity
+  flow: number; // Changed from RangeValue to number for simplicity
+  hardness: number; // Changed from RangeValue to number for simplicity
+  spacing: number; // Changed from RangeValue to number for simplicity
+  scatter?: number; // Changed from RangeValue to number for simplicity
   texture?: string;
   mixMode?: 'normal' | 'wet' | 'multiply';
   smoothing: number;
+  pressureSensitivity?: number; // Added for Apple Pencil support
 }
 
+// Keep RangeValue for settings UI where it's needed
 export interface RangeValue {
   min: number;
   max: number;
@@ -485,4 +502,21 @@ export interface Rectangle {
   y: number;
   width: number;
   height: number;
+}
+
+// --- Typography Types for UI ---
+export interface TypographyStyle {
+  fontSize: number;
+  fontWeight: 'normal' | 'bold' | '100' | '200' | '300' | '400' | '500' | '600' | '700' | '800' | '900';
+  lineHeight?: number;
+  letterSpacing?: number;
+}
+
+export interface Typography {
+  h1: TypographyStyle;
+  h2: TypographyStyle;
+  h3: TypographyStyle;
+  h4: TypographyStyle;
+  body: TypographyStyle;
+  caption: TypographyStyle;
 }

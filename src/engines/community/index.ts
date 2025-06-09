@@ -1,75 +1,116 @@
+// Community engine exports and operations
+export { SocialEngine } from './SocialEngine';
+export { ChallengeSystem } from './ChallengeSystem';
+
+// FIXED: Create singleton instances
+import { SocialEngine } from './SocialEngine';
+import { ChallengeSystem } from './ChallengeSystem';
+
+export const socialEngine = new SocialEngine();
+export const challengeSystem = new ChallengeSystem();
+
 /**
- * Community Engine Module
- * Manages social features, challenges, and community engagement
+ * Community API - High-level interface for social features
+ * Provides simplified access to community functionality
  */
 
-export { SocialEngine, socialEngine } from './SocialEngine';
-export { ChallengeSystem, challengeSystem } from './ChallengeSystem';
+// Community dashboard data
+export interface CommunityDashboard {
+  activeChallenges: any[];
+  trendingArtwork: any[];
+  userEngagement: {
+    followersCount: number;
+    followingCount: number;
+    likesReceived: number;
+    commentsReceived: number;
+  };
+  challenges: {
+    dailyChallenge: any;
+    weeklyChallenge: any;
+    specialChallenges: any[];
+  };
+}
 
-// Re-export community-related types
-export type {
-  Challenge,
-  Prize,
-  Comment,
-} from '../../types';
-
-// Community engine initialization
-export const initializeCommunityEngine = async (): Promise<void> => {
-  console.log('🌟 Initializing Community Engine...');
-  
-  // Systems initialize themselves through singleton pattern
-  // Any additional initialization can go here
-  
-  console.log('✅ Community Engine initialized successfully');
-};
-
-// Utility functions for community management
-export const getCommunityEngineStatus = () => {
+export const getCommunityDashboard = async (): Promise<CommunityDashboard> => {
   const activeChallenges = challengeSystem.getAllActiveChallenges();
   const trending = socialEngine.getTrendingContent();
   const user = socialEngine.getEngagementStats('current'); // Would need current user ID
   
   return {
-    activeChallenges: activeChallenges.length,
-    dailyChallenge: challengeSystem.getActiveChallenge('daily'),
-    weeklyChallenge: challengeSystem.getActiveChallenge('weekly'),
-    trendingArtworks: trending.artworks.length,
-    trendingArtists: trending.artists.length,
+    activeChallenges,
+    trendingArtwork: trending,
     userEngagement: user,
+    challenges: {
+      dailyChallenge: challengeSystem.getActiveChallenge('daily'),
+      weeklyChallenge: challengeSystem.getActiveChallenge('weekly'),
+      specialChallenges: challengeSystem.getSpecialChallenges(),
+    },
   };
 };
 
-// Quick community actions
-export const quickActions = {
-  async followUser(userId: string): Promise<void> {
+// Social actions
+export const followUser = async (userId: string): Promise<void> => {
+  try {
     await socialEngine.followUser(userId);
-  },
-  
-  async unfollowUser(userId: string): Promise<void> {
+  } catch (error) {
+    throw new Error(`Failed to follow user: ${error}`);
+  }
+};
+
+export const unfollowUser = async (userId: string): Promise<void> => {
+  try {
     await socialEngine.unfollowUser(userId);
-  },
-  
-  async likeArtwork(artworkId: string): Promise<void> {
+  } catch (error) {
+    throw new Error(`Failed to unfollow user: ${error}`);
+  }
+};
+
+export const likeArtwork = async (artworkId: string): Promise<void> => {
+  try {
     await socialEngine.likeArtwork(artworkId);
-  },
-  
-  async commentOnArtwork(artworkId: string, text: string): Promise<any> {
+  } catch (error) {
+    throw new Error(`Failed to like artwork: ${error}`);
+  }
+};
+
+export const commentOnArtwork = async (artworkId: string, text: string): Promise<any> => {
+  try {
     return socialEngine.commentOnArtwork(artworkId, text);
-  },
-  
-  async shareArtwork(artworkId: string, message?: string): Promise<void> {
+  } catch (error) {
+    throw new Error(`Failed to comment on artwork: ${error}`);
+  }
+};
+
+export const shareArtwork = async (artworkId: string, message?: string): Promise<void> => {
+  try {
     await socialEngine.shareArtwork(artworkId, message);
-  },
-  
-  async submitToChallenge(challengeId: string, artworkId: string): Promise<void> {
+  } catch (error) {
+    throw new Error(`Failed to share artwork: ${error}`);
+  }
+};
+
+// Challenge actions
+export const submitToChallenge = async (challengeId: string, artworkId: string): Promise<void> => {
+  try {
     await challengeSystem.submitToChallenge(challengeId, artworkId);
-  },
-  
-  async getFeed(page?: number): Promise<any[]> {
+  } catch (error) {
+    throw new Error(`Failed to submit to challenge: ${error}`);
+  }
+};
+
+// Content discovery
+export const getFeed = async (page: number = 1): Promise<any[]> => {
+  try {
     return socialEngine.generateFeed('current', page); // Would need current user ID
-  },
-  
-  getSuggestedUsers(): string[] {
+  } catch (error) {
+    throw new Error(`Failed to get feed: ${error}`);
+  }
+};
+
+export const getSuggestedUsers = async (): Promise<any[]> => {
+  try {
     return socialEngine.getSuggestedUsers('current'); // Would need current user ID
-  },
+  } catch (error) {
+    throw new Error(`Failed to get suggested users: ${error}`);
+  }
 };

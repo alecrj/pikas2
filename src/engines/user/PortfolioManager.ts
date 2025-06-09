@@ -11,7 +11,7 @@ import { profileSystem } from './ProfileSystem';
 export class PortfolioManager {
   private static instance: PortfolioManager;
   private artworkCache: Map<string, Artwork> = new Map();
-  private portfolioListeners: Set<(artworks: Artwork[]) => void> = new Set();
+  public portfolioListeners: Set<(artworks: Artwork[]) => void> = new Set();
   
   private readonly MAX_ARTWORK_SIZE = 10 * 1024 * 1024; // 10MB per artwork
   private readonly THUMBNAIL_SIZE = { width: 400, height: 400 };

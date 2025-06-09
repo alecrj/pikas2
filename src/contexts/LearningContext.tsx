@@ -1,235 +1,256 @@
+// COMPLETE FIX for src/contexts/LearningContext.tsx
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { 
-  SkillTree, 
   Lesson, 
-  LearningProgress, 
-  LessonProgress,
-  TheorySegment,
-  PracticeInstruction,
-  Assessment,
-  LessonState
+  LessonState, 
+  LessonProgress, 
+  SkillTree, 
+  LearningProgress 
 } from '../types';
 import { skillTreeManager } from '../engines/learning/SkillTreeManager';
+import { lessonEngine } from '../engines/learning/LessonEngine';
+import { progressTracker } from '../engines/learning/ProgressTracker';
 import { dataManager } from '../engines/core/DataManager';
 import { errorHandler } from '../engines/core/ErrorHandler';
-import { eventBus } from '../engines/core/EventBus';
 
-interface LearningContextType {
-  currentSkillTree: SkillTree | null;
+/**
+ * Learning Context - Manages lesson delivery, progress, and skill development
+ * Provides seamless theory-to-practice learning experience
+ */
+
+export interface LearningContextType {
+  // Current lesson state
   currentLesson: Lesson | null;
   lessonState: LessonState | null;
-  learningProgress: LearningProgress | null;
-  isLoading: boolean;
+  isLoadingLesson: boolean;
   
-  // Actions
-  setCurrentSkillTree: (tree: SkillTree) => void;
-  startLesson: (lesson: Lesson) => Promise<void>;
-  completeTheorySegment: (segmentIndex: number) => void;
-  completePracticeStep: (stepIndex: number, score: number) => void;
-  completeLesson: (assessmentScore: number) => Promise<void>;
-  pauseLesson: () => Promise<void>;
-  resumeLesson: () => Promise<void>;
-  resetLesson: () => void;
+  // Available content
+  skillTrees: SkillTree[];
+  availableLessons: Lesson[];
+  unlockedLessons: string[];
   
   // Progress tracking
-  getLessonProgress: (lessonId: string) => LessonProgress | null;
-  getSkillTreeProgress: (treeId: string) => number;
-  getTotalProgress: () => number;
+  learningProgress: LearningProgress | null;
+  completedLessons: string[];
+  currentStreak: number;
   
-  // Learning helpers
+  // FIXED: Added missing properties from error logs
+  recommendedLesson: Lesson | null;
+  insights: Array<{
+    id: string;
+    type: 'improvement' | 'achievement' | 'suggestion';
+    title: string;
+    description: string;
+    actionable: boolean;
+  }>;
+  
+  // FIXED: Added missing currentSkillTree properties
+  currentSkillTree: SkillTree | null;
+  setCurrentSkillTree: (skillTree: SkillTree | null) => void;
+  
+  // Lesson control
+  startLesson: (lesson: Lesson) => Promise<void>;
+  pauseLesson: () => Promise<void>;
+  resumeLesson: () => Promise<void>;
+  completeLesson: (score?: number) => Promise<void>;
+  exitLesson: () => Promise<void>;
+  
+  // Progress management
+  updateProgress: (stepIndex: number, completed: boolean) => Promise<void>;
+  addHint: (hint: string) => void;
+  validateStep: (stepIndex: number, userInput: any) => Promise<boolean>;
+  
+  // Content access
+  getLesson: (lessonId: string) => Lesson | null;
   getNextLesson: () => Lesson | null;
-  getAvailableLessons: (treeId: string) => Lesson[];
-  checkPrerequisites: (lesson: Lesson) => boolean;
+  checkUnlockRequirements: (lessonId: string) => boolean;
 }
 
 const LearningContext = createContext<LearningContextType | undefined>(undefined);
 
-export function LearningProvider({ children }: { children: ReactNode }) {
-  const [currentSkillTree, setCurrentSkillTree] = useState<SkillTree | null>(null);
+export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [lessonState, setLessonState] = useState<LessonState | null>(null);
+  const [isLoadingLesson, setIsLoadingLesson] = useState(false);
+  const [skillTrees, setSkillTrees] = useState<SkillTree[]>([]);
+  const [availableLessons, setAvailableLessons] = useState<Lesson[]>([]);
+  const [unlockedLessons, setUnlockedLessons] = useState<string[]>([]);
   const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [completedLessons, setCompletedLessons] = useState<string[]>([]);
+  const [currentStreak, setCurrentStreak] = useState(0);
+  
+  // FIXED: Added missing state properties
+  const [recommendedLesson, setRecommendedLesson] = useState<Lesson | null>(null);
+  const [currentSkillTree, setCurrentSkillTree] = useState<SkillTree | null>(null);
+  const [insights, setInsights] = useState<Array<{
+    id: string;
+    type: 'improvement' | 'achievement' | 'suggestion';
+    title: string;
+    description: string;
+    actionable: boolean;
+  }>>([]);
 
+  // Initialize learning system
   useEffect(() => {
-    loadLearningProgress();
+    initializeLearning();
   }, []);
 
-  const loadLearningProgress = async () => {
-    try {
-      setIsLoading(true);
-      const progress = await dataManager.getLearningProgress();
+  // Subscribe to progress updates
+  useEffect(() => {
+    const unsubscribe = progressTracker.subscribeToProgress((progress) => {
       setLearningProgress(progress);
-      
-      // Set default skill tree if none selected
+      setCompletedLessons(progress.completedLessons);
+      setCurrentStreak(progress.currentStreak);
+      updateRecommendations();
+      generateInsights();
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const initializeLearning = async () => {
+    try {
+      // Load skill trees and lessons
       const trees = skillTreeManager.getAllSkillTrees();
-      if (trees.length > 0 && !currentSkillTree) {
+      setSkillTrees(trees);
+      
+      // FIXED: Use getAllLessons method that we added
+      const lessons = skillTreeManager.getAllLessons();
+      setAvailableLessons(lessons);
+      
+      // Load user progress
+      const progress = progressTracker.getProgress();
+      if (progress) {  // FIXED: Null check
+        setLearningProgress(progress);
+        setCompletedLessons(progress.completedLessons);
+        setCurrentStreak(progress.currentStreak);
+      }
+      
+      // Determine unlocked lessons
+      const unlocked = skillTreeManager.getUnlockedLessons();
+      setUnlockedLessons(unlocked);
+      
+      // Set default skill tree
+      if (trees.length > 0) {
         setCurrentSkillTree(trees[0]);
       }
+      
+      // Set recommendations and insights
+      updateRecommendations();
+      generateInsights();
+      
     } catch (error) {
       errorHandler.handleError(
-        errorHandler.createError('LEARNING_LOAD_ERROR', 'Failed to load learning progress', 'medium', error)
+        errorHandler.createError('LEARNING_INIT_ERROR', 'Failed to initialize learning system', 'medium', error)
       );
-    } finally {
-      setIsLoading(false);
+    }
+  };
+
+  // FIXED: Added recommendation logic
+  const updateRecommendations = () => {
+    try {
+      const recommended = progressTracker.getRecommendedLessons(1);
+      if (recommended.length > 0) {
+        const lesson = skillTreeManager.getLesson(recommended[0]);
+        setRecommendedLesson(lesson);
+      } else {
+        setRecommendedLesson(null);
+      }
+    } catch (error) {
+      console.warn('Failed to update recommendations:', error);
+    }
+  };
+
+  // FIXED: Added insights generation
+  const generateInsights = () => {
+    try {
+      const newInsights = [];
+      
+      // Progress-based insights
+      if (currentStreak >= 3) {
+        newInsights.push({
+          id: 'streak_achievement',
+          type: 'achievement' as const,
+          title: `${currentStreak} Day Streak!`,
+          description: 'You\'re building a great learning habit. Keep it up!',
+          actionable: false,
+        });
+      }
+      
+      // Skill development insights
+      if (completedLessons.length >= 5) {
+        newInsights.push({
+          id: 'skill_development',
+          type: 'improvement' as const,
+          title: 'Drawing Fundamentals',
+          description: 'Your line work has improved significantly. Try more complex shapes!',
+          actionable: true,
+        });
+      }
+      
+      // Recommendation insights
+      if (recommendedLesson) {
+        newInsights.push({
+          id: 'next_lesson',
+          type: 'suggestion' as const,
+          title: 'Ready for Next Challenge',
+          description: `Try "${recommendedLesson.title}" to continue your learning journey`,
+          actionable: true,
+        });
+      }
+      
+      setInsights(newInsights);
+    } catch (error) {
+      console.warn('Failed to generate insights:', error);
     }
   };
 
   const startLesson = async (lesson: Lesson) => {
     try {
-      setCurrentLesson(lesson);
+      setIsLoadingLesson(true);
       
-      // Check if resuming a paused lesson
-      const savedState = await dataManager.load(`lesson_state_${lesson.id}`);
-      if (savedState) {
-        setLessonState(savedState);
-        eventBus.emit('lesson_resumed', { lessonId: lesson.id });
-      } else {
-        // Initialize new lesson state
-        const newState: LessonState = {
-          lessonId: lesson.id,
-          startedAt: new Date(),
-          theoryProgress: {
-            currentSegment: 0,
-            completedSegments: [],
-            timeSpent: 0,
-          },
-          practiceProgress: {
-            currentStep: 0,
-            completedSteps: [],
-            attempts: {},
-            hints: [],
-            timeSpent: 0,
-          },
-          overallProgress: 0,
-          isPaused: false,
-        };
-        setLessonState(newState);
-        eventBus.emit('lesson_started', { lessonId: lesson.id });
-      }
-    } catch (error) {
-      errorHandler.handleError(
-        errorHandler.createError('LESSON_START_ERROR', 'Failed to start lesson', 'high', error)
-      );
-    }
-  };
-
-  const completeTheorySegment = (segmentIndex: number) => {
-    if (!lessonState || !currentLesson) return;
-
-    const updatedState = {
-      ...lessonState,
-      theoryProgress: {
-        ...lessonState.theoryProgress,
-        currentSegment: segmentIndex + 1,
-        completedSegments: [...lessonState.theoryProgress.completedSegments, segmentIndex],
-      },
-    };
-
-    // Calculate overall progress
-    const theoryCompletion = updatedState.theoryProgress.completedSegments.length / 
-                           currentLesson.theoryContent.segments.length;
-    updatedState.overallProgress = theoryCompletion * 0.3; // Theory is 30% of lesson
-
-    setLessonState(updatedState);
-    eventBus.emit('theory_segment_completed', { 
-      lessonId: currentLesson.id, 
-      segmentIndex,
-      progress: updatedState.overallProgress
-    });
-  };
-
-  const completePracticeStep = (stepIndex: number, score: number) => {
-    if (!lessonState || !currentLesson) return;
-
-    const attempts = lessonState.practiceProgress.attempts[stepIndex] || [];
-    const updatedState = {
-      ...lessonState,
-      practiceProgress: {
-        ...lessonState.practiceProgress,
-        currentStep: stepIndex + 1,
-        completedSteps: score >= 0.7 
-          ? [...lessonState.practiceProgress.completedSteps, stepIndex]
-          : lessonState.practiceProgress.completedSteps,
-        attempts: {
-          ...lessonState.practiceProgress.attempts,
-          [stepIndex]: [...attempts, { score, timestamp: new Date() }],
+      // Create new lesson state
+      const newLessonState: LessonState = {
+        lessonId: lesson.id,
+        startedAt: new Date(),
+        theoryProgress: {
+          currentSegment: 0,
+          completedSegments: [],
+          timeSpent: 0,
         },
-      },
-    };
-
-    // Calculate overall progress
-    const theoryCompletion = lessonState.theoryProgress.completedSegments.length / 
-                           currentLesson.theoryContent.segments.length;
-    const practiceCompletion = updatedState.practiceProgress.completedSteps.length / 
-                             currentLesson.practiceContent.instructions.length;
-    updatedState.overallProgress = (theoryCompletion * 0.3) + (practiceCompletion * 0.5);
-
-    setLessonState(updatedState);
-    eventBus.emit('practice_step_completed', { 
-      lessonId: currentLesson.id, 
-      stepIndex,
-      score,
-      progress: updatedState.overallProgress
-    });
-  };
-
-  const completeLesson = async (assessmentScore: number) => {
-    if (!currentLesson || !lessonState) return;
-
-    try {
-      // Calculate XP earned
-      const baseXP = currentLesson.xpReward;
-      const bonusXP = assessmentScore >= 0.9 ? Math.floor(baseXP * 0.2) : 0;
-      const totalXP = baseXP + bonusXP;
-
-      // Complete the lesson in skill tree manager
-      await skillTreeManager.completeLesson(currentLesson.id, totalXP);
-
-      // Save lesson progress
-      const lessonProgress: LessonProgress = {
-        lessonId: currentLesson.id,
-        completed: true,
-        completedAt: new Date(),
-        bestScore: assessmentScore,
-        attempts: 1,
-        totalTimeSpent: lessonState.theoryProgress.timeSpent + lessonState.practiceProgress.timeSpent,
-        xpEarned: totalXP,
+        practiceProgress: {
+          currentStep: 0,
+          completedSteps: [],
+          attempts: {},
+          hints: [],
+          timeSpent: 0,
+        },
+        overallProgress: 0,
+        isPaused: false,
       };
-
-      // Update learning progress
-      if (learningProgress) {
-        const updatedProgress = {
-          ...learningProgress,
-          completedLessons: [...learningProgress.completedLessons, currentLesson.id],
-          totalXP: learningProgress.totalXP + totalXP,
-        };
-        await dataManager.saveLearningProgress(updatedProgress);
-        setLearningProgress(updatedProgress);
-      }
-
-      // Clear lesson state
-      await dataManager.remove(`lesson_state_${currentLesson.id}`);
       
-      eventBus.emit('lesson_completed', {
-        lessonId: currentLesson.id,
-        score: assessmentScore,
-        xpEarned: totalXP,
-      });
-
-      // Reset current lesson
-      setCurrentLesson(null);
-      setLessonState(null);
+      setCurrentLesson(lesson);
+      setLessonState(newLessonState);
+      
+      // Save state
+      await dataManager.save(`lesson_state_${lesson.id}`, newLessonState);
+      
+      // Initialize lesson engine - FIXED: Single parameter
+      await lessonEngine.startLesson(lesson);
+      
     } catch (error) {
       errorHandler.handleError(
-        errorHandler.createError('LESSON_COMPLETE_ERROR', 'Failed to complete lesson', 'high', error)
+        errorHandler.createError('LESSON_START_ERROR', 'Failed to start lesson', 'medium', error)
       );
+    } finally {
+      setIsLoadingLesson(false);
     }
   };
 
   const pauseLesson = async () => {
-    if (!lessonState || !currentLesson) return;
-
+    if (!currentLesson || !lessonState) return;
+    
     try {
       const pausedState = {
         ...lessonState,
@@ -237,117 +258,195 @@ export function LearningProvider({ children }: { children: ReactNode }) {
         pausedAt: new Date(),
       };
       
-      await dataManager.save(`lesson_state_${currentLesson.id}`, pausedState);
       setLessonState(pausedState);
+      await dataManager.save(`lesson_state_${currentLesson.id}`, pausedState);
       
-      eventBus.emit('lesson_paused', { lessonId: currentLesson.id });
     } catch (error) {
       errorHandler.handleError(
-        errorHandler.createError('LESSON_PAUSE_ERROR', 'Failed to pause lesson', 'medium', error)
+        errorHandler.createError('LESSON_PAUSE_ERROR', 'Failed to pause lesson', 'low', error)
       );
     }
   };
 
   const resumeLesson = async () => {
-    if (!lessonState || !currentLesson) return;
-
-    const resumedState = {
-      ...lessonState,
-      isPaused: false,
-      pausedAt: undefined,
-    };
+    if (!currentLesson || !lessonState) return;
     
-    setLessonState(resumedState);
-    eventBus.emit('lesson_resumed', { lessonId: currentLesson.id });
+    try {
+      const resumedState = {
+        ...lessonState,
+        isPaused: false,
+        pausedAt: undefined,
+      };
+      
+      setLessonState(resumedState);
+      await dataManager.save(`lesson_state_${currentLesson.id}`, resumedState);
+      
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('LESSON_RESUME_ERROR', 'Failed to resume lesson', 'low', error)
+      );
+    }
   };
 
-  const resetLesson = () => {
+  const completeLesson = async (score: number = 100) => {
+    if (!currentLesson || !lessonState) return;
+    
+    try {
+      // Mark lesson as completed - FIXED: Use completeLesson method
+      await progressTracker.completeLesson(currentLesson.id, score);
+      
+      // Update progress
+      const progress = progressTracker.getProgress();
+      if (progress) {  // FIXED: Null check
+        setLearningProgress(progress);
+        setCompletedLessons(progress.completedLessons);
+      }
+      
+      // Clear current lesson
+      setCurrentLesson(null);
+      setLessonState(null);
+      
+      // Update recommendations
+      updateRecommendations();
+      generateInsights();
+      
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('LESSON_COMPLETE_ERROR', 'Failed to complete lesson', 'medium', error)
+      );
+    }
+  };
+
+  const exitLesson = async () => {
     if (!currentLesson) return;
+    
+    try {
+      // Save current state if needed
+      if (lessonState) {
+        await dataManager.save(`lesson_state_${currentLesson.id}`, lessonState);
+      }
+      
+      setCurrentLesson(null);
+      setLessonState(null);
+      
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('LESSON_EXIT_ERROR', 'Failed to exit lesson', 'low', error)
+      );
+    }
+  };
 
-    const newState: LessonState = {
-      lessonId: currentLesson.id,
-      startedAt: new Date(),
-      theoryProgress: {
-        currentSegment: 0,
-        completedSegments: [],
-        timeSpent: 0,
-      },
+  const updateProgress = async (stepIndex: number, completed: boolean) => {
+    if (!lessonState) return;
+    
+    try {
+      const updatedState = {
+        ...lessonState,
+        practiceProgress: {
+          ...lessonState.practiceProgress,
+          currentStep: completed ? stepIndex + 1 : stepIndex,
+          completedSteps: completed 
+            ? [...lessonState.practiceProgress.completedSteps, stepIndex]
+            : lessonState.practiceProgress.completedSteps,
+        },
+      };
+      
+      // Calculate overall progress
+      const totalSteps = currentLesson?.practiceContent.instructions.length || 1;
+      updatedState.overallProgress = (updatedState.practiceProgress.completedSteps.length / totalSteps) * 100;
+      
+      setLessonState(updatedState);
+      
+      if (currentLesson) {
+        await dataManager.save(`lesson_state_${currentLesson.id}`, updatedState);
+      }
+      
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('PROGRESS_UPDATE_ERROR', 'Failed to update progress', 'low', error)
+      );
+    }
+  };
+
+  const addHint = (hint: string) => {
+    if (!lessonState) return;
+    
+    const updatedState = {
+      ...lessonState,
       practiceProgress: {
-        currentStep: 0,
-        completedSteps: [],
-        attempts: {},
-        hints: [],
-        timeSpent: 0,
+        ...lessonState.practiceProgress,
+        hints: [...lessonState.practiceProgress.hints, hint],
       },
-      overallProgress: 0,
-      isPaused: false,
     };
     
-    setLessonState(newState);
-    eventBus.emit('lesson_reset', { lessonId: currentLesson.id });
+    setLessonState(updatedState);
   };
 
-  const getLessonProgress = (lessonId: string): LessonProgress | null => {
-    // Implementation would fetch from saved progress
-    return null;
+  const validateStep = async (stepIndex: number, userInput: any): Promise<boolean> => {
+    if (!currentLesson) return false;
+    
+    try {
+      // FIXED: Use validateStep method with correct parameters
+      return await lessonEngine.validateStep(currentLesson, stepIndex, userInput);
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('STEP_VALIDATION_ERROR', 'Failed to validate step', 'low', error)
+      );
+      return false;
+    }
   };
 
-  const getSkillTreeProgress = (treeId: string): number => {
-    if (!learningProgress) return 0;
-    
-    const tree = skillTreeManager.getSkillTree(treeId);
-    if (!tree) return 0;
-    
-    const completedInTree = tree.lessons.filter(lesson => 
-      learningProgress.completedLessons.includes(lesson.id)
-    ).length;
-    
-    return (completedInTree / tree.lessons.length) * 100;
-  };
-
-  const getTotalProgress = (): number => {
-    if (!learningProgress) return 0;
-    
-    const allTrees = skillTreeManager.getAllSkillTrees();
-    const totalLessons = allTrees.reduce((sum, tree) => sum + tree.lessons.length, 0);
-    const completedLessons = learningProgress.completedLessons.length;
-    
-    return totalLessons > 0 ? (completedLessons / totalLessons) * 100 : 0;
+  const getLesson = (lessonId: string): Lesson | null => {
+    return skillTreeManager.getLesson(lessonId);
   };
 
   const getNextLesson = (): Lesson | null => {
-    return skillTreeManager.getRecommendedNextLesson();
+    const recommended = progressTracker.getRecommendedLessons(1);
+    return recommended.length > 0 ? skillTreeManager.getLesson(recommended[0]) : null;
   };
 
-  const getAvailableLessons = (treeId: string): Lesson[] => {
-    return skillTreeManager.getAvailableLessons(treeId);
-  };
-
-  const checkPrerequisites = (lesson: Lesson): boolean => {
-    const availableLessons = skillTreeManager.getAvailableLessons(lesson.skillTreeId);
-    return availableLessons.includes(lesson);
+  const checkUnlockRequirements = (lessonId: string): boolean => {
+    return skillTreeManager.checkUnlockRequirements(lessonId);
   };
 
   const value: LearningContextType = {
-    currentSkillTree,
+    // Current lesson state
     currentLesson,
     lessonState,
+    isLoadingLesson,
+    
+    // Available content
+    skillTrees,
+    availableLessons,
+    unlockedLessons,
+    
+    // Progress tracking
     learningProgress,
-    isLoading,
+    completedLessons,
+    currentStreak,
+    
+    // FIXED: Added missing properties
+    recommendedLesson,
+    insights,
+    currentSkillTree,
     setCurrentSkillTree,
+    
+    // Lesson control
     startLesson,
-    completeTheorySegment,
-    completePracticeStep,
-    completeLesson,
     pauseLesson,
     resumeLesson,
-    resetLesson,
-    getLessonProgress,
-    getSkillTreeProgress,
-    getTotalProgress,
+    completeLesson,
+    exitLesson,
+    
+    // Progress management
+    updateProgress,
+    addHint,
+    validateStep,
+    
+    // Content access
+    getLesson,
     getNextLesson,
-    getAvailableLessons,
-    checkPrerequisites,
+    checkUnlockRequirements,
   };
 
   return (
@@ -355,12 +454,15 @@ export function LearningProvider({ children }: { children: ReactNode }) {
       {children}
     </LearningContext.Provider>
   );
-}
+};
 
-export function useLearning() {
+export const useLearning = (): LearningContextType => {
   const context = useContext(LearningContext);
   if (!context) {
     throw new Error('useLearning must be used within a LearningProvider');
   }
   return context;
-}
+};
+
+// FIXED: Added alias for compatibility
+export const useLessonContext = useLearning;

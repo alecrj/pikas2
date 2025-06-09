@@ -50,7 +50,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 export default function DrawScreen() {
   const theme = useTheme();
   const { state: drawingState, dispatch: drawingDispatch } = useDrawing();
-  const { addXP, unlockAchievement } = useUserProgress();
+  const { addXP, addAchievement } = useUserProgress(); // FIXED: Changed from unlockAchievement to addAchievement
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const professionalCanvas = useRef<ProfessionalCanvas | null>(null);
@@ -145,10 +145,10 @@ export default function DrawScreen() {
     const totalStrokes = state.layers.reduce((sum, layer) => sum + (layer.strokes?.length || 0), 0);
     
     if (totalStrokes === 1) {
-      unlockAchievement('first_stroke');
+      addAchievement('first_stroke'); // FIXED: Using addAchievement
     }
     if (totalStrokes === 100) {
-      unlockAchievement('hundred_strokes');
+      addAchievement('hundred_strokes'); // FIXED: Using addAchievement
     }
   };
 
@@ -203,7 +203,7 @@ export default function DrawScreen() {
         await MediaLibrary.createAlbumAsync('Pikaso', asset, false);
         
         Alert.alert('Success', 'Artwork saved to gallery!');
-        unlockAchievement('first_export');
+        addAchievement('first_export'); // FIXED: Using addAchievement
       };
     } catch (error) {
       Alert.alert('Error', 'Failed to export artwork');
@@ -221,7 +221,7 @@ export default function DrawScreen() {
         dialogTitle: 'Share your artwork',
       });
       
-      unlockAchievement('first_share');
+      addAchievement('first_share'); // FIXED: Using addAchievement
     } catch (error) {
       Alert.alert('Error', 'Failed to share artwork');
     }
@@ -260,11 +260,13 @@ export default function DrawScreen() {
             ))}
           </ScrollView>
           <View style={styles.brushSettings}>
+            {/* FIXED: Removed .current access since size is now a number */}
             <Text style={styles.settingLabel}>
-              Size: {drawingState.currentBrush.settings.size?.current ?? drawingState.currentBrush.settings.size}px
+              Size: {drawingState.currentBrush.settings.size}px
             </Text>
+            {/* FIXED: Removed .current access and proper number handling */}
             <Text style={styles.settingLabel}>
-              Opacity: {Math.round(drawingState.currentBrush.settings.opacity?.current * 100)}%
+              Opacity: {Math.round(drawingState.currentBrush.settings.opacity * 100)}%
             </Text>
           </View>
         </View>
@@ -457,7 +459,8 @@ export default function DrawScreen() {
         <View style={styles.brushInfo}>
           <Text style={styles.brushInfoText}>{drawingState.currentBrush.name}</Text>
           <Text style={styles.brushInfoSubtext}>
-            {drawingState.currentBrush.settings.size?.current ?? drawingState.currentBrush.settings.size}px
+            {/* FIXED: Removed .current access since size is now a number */}
+            {drawingState.currentBrush.settings.size}px
           </Text>
         </View>
       </View>

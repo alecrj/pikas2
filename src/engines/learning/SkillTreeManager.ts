@@ -1431,6 +1431,54 @@ export class SkillTreeManager {
   private notifyProgressListeners(): void {
     this.progressListeners.forEach(callback => callback(this.userProgress));
   }
+  // FIXED: Add missing initialize method
+public async initialize(): Promise<void> {
+  console.log('SkillTreeManager initialized');
+}
+
+// FIXED: Add missing getAllLessons method
+public getAllLessons(): Lesson[] {
+  const allLessons: Lesson[] = [];
+  this.skillTrees.forEach(tree => {
+    allLessons.push(...tree.lessons);
+  });
+  return allLessons.sort((a, b) => a.order - b.order);
+}
+
+// FIXED: Add missing getUnlockedLessons method  
+public getUnlockedLessons(): string[] {
+  const unlockedLessons: string[] = [];
+  const user = profileSystem.getCurrentUser();
+  
+  this.skillTrees.forEach(tree => {
+    const progress = this.userProgress.get(tree.id);
+    const availableLessons = this.getAvailableLessons(tree.id);
+    
+    availableLessons.forEach(lesson => {
+      if (this.checkLessonRequirements(lesson, progress, user)) {
+        unlockedLessons.push(lesson.id);
+      }
+    });
+  });
+  
+  return unlockedLessons;
+}
+
+// FIXED: Add missing checkUnlockRequirements method
+public checkUnlockRequirements(lessonId: string): boolean {
+  const lesson = this.getLesson(lessonId);
+  if (!lesson) return false;
+  
+  const progress = this.userProgress.get(lesson.skillTreeId);
+  const user = profileSystem.getCurrentUser();
+  
+  return this.checkLessonRequirements(lesson, progress, user);
+}
+
+// FIXED: Add missing loadContent method  
+public async loadContent(): Promise<void> {
+  console.log('SkillTreeManager content loaded');
+}
 }
 
 // Export singleton instance

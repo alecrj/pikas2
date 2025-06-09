@@ -33,80 +33,103 @@ const defaultBrushes: Brush[] = [
   {
     id: 'pencil',
     name: 'Pencil',
+    category: 'pencil',
     icon: '✏️',
-    type: 'pencil',
     settings: {
+      size: 5,
       minSize: 2,
       maxSize: 10,
       pressureSensitivity: 0.8,
-      tiltSensitivity: 0.5,
       opacity: 1,
       flow: 0.9,
+      hardness: 0.8,
+      spacing: 0.2,
       smoothing: 0.5,
     },
+    pressureCurve: [0, 0.2, 0.8, 1],
+    tiltSupport: true,
+    customizable: true,
   },
   {
     id: 'pen',
     name: 'Ink Pen',
+    category: 'ink',
     icon: '🖊️',
-    type: 'pen',
     settings: {
+      size: 4,
       minSize: 3,
       maxSize: 8,
       pressureSensitivity: 0.6,
-      tiltSensitivity: 0.3,
       opacity: 1,
       flow: 1,
+      hardness: 1,
+      spacing: 0.1,
       smoothing: 0.3,
     },
+    pressureCurve: [0, 0.5, 0.9, 1],
+    tiltSupport: false,
+    customizable: true,
   },
   {
     id: 'marker',
     name: 'Marker',
+    category: 'marker',
     icon: '🖍️',
-    type: 'marker',
     settings: {
+      size: 15,
       minSize: 8,
       maxSize: 20,
       pressureSensitivity: 0.4,
-      tiltSensitivity: 0.2,
       opacity: 0.8,
       flow: 0.8,
+      hardness: 0.4,
+      spacing: 0.3,
       smoothing: 0.6,
     },
+    pressureCurve: [0, 0.3, 0.7, 1],
+    tiltSupport: true,
+    customizable: true,
   },
   {
     id: 'watercolor',
     name: 'Watercolor',
+    category: 'watercolor',
     icon: '🎨',
-    type: 'watercolor',
     settings: {
+      size: 20,
       minSize: 10,
       maxSize: 30,
       pressureSensitivity: 0.9,
-      tiltSensitivity: 0.6,
       opacity: 0.5,
       flow: 0.6,
+      hardness: 0.2,
+      spacing: 0.4,
       smoothing: 0.7,
-      wetness: 0.8,
-      bleed: 0.4,
     },
+    pressureCurve: [0, 0.1, 0.6, 1],
+    tiltSupport: true,
+    customizable: true,
   },
   {
     id: 'airbrush',
     name: 'Airbrush',
+    category: 'airbrush',
     icon: '💨',
-    type: 'airbrush',
     settings: {
+      size: 35,
       minSize: 20,
       maxSize: 50,
       pressureSensitivity: 0.7,
-      tiltSensitivity: 0.4,
       opacity: 0.3,
       flow: 0.5,
-      smoothing: 0.8,
+      hardness: 0.1,
+      spacing: 0.5,
       scatter: 0.3,
+      smoothing: 0.8,
     },
+    pressureCurve: [0, 0.2, 0.5, 1],
+    tiltSupport: true,
+    customizable: true,
   },
 ];
 
@@ -126,6 +149,9 @@ const initialState: DrawingContextState = {
   layers: [{
     id: 'layer-1',
     name: 'Layer 1',
+    type: 'raster', // FIXED: Added missing type
+    data: null,     // FIXED: Added missing data
+    order: 0,       // FIXED: Added missing order
     strokes: [],
     opacity: 1,
     blendMode: 'normal',
@@ -225,12 +251,33 @@ function drawingReducer(state: DrawingContextState, action: DrawingAction): Draw
 }
 
 function getCurrentDrawingState(state: DrawingContextState): DrawingState {
+  // FIXED: Return complete DrawingState with all required properties
   return {
+    currentTool: 'brush',
+    currentBrush: state.currentBrush,
+    currentColor: {
+      hex: state.currentColor,
+      rgb: { r: 0, g: 0, b: 0 }, // Would parse from hex
+      hsb: { h: 0, s: 0, b: 0 }, // Would parse from hex
+      alpha: 1,
+    },
     layers: state.layers,
     activeLayerId: state.activeLayerId,
+    history: [], // Would be populated with actual history
+    historyIndex: 0,
+    canvas: {
+      width: 1024,
+      height: 1024,
+      zoom: 1,
+      rotation: 0,
+      offset: { x: 0, y: 0 },
+      isDrawing: false,
+      pressure: 1,
+      tilt: { x: 0, y: 0 },
+    },
     canvasSize: { width: 1024, height: 1024 },
-    zoom: 1,
     pan: { x: 0, y: 0 },
+    zoom: 1,
     backgroundColor: '#FFFFFF',
   };
 }
@@ -263,7 +310,8 @@ export function DrawingProvider({ children }: { children: ReactNode }) {
   const loadSavedState = async () => {
     try {
       const savedState = await dataManager.load('drawing_state');
-      if (savedState && savedState.layers) {
+      // FIXED: Check if savedState exists and has layers property
+      if (savedState && savedState.layers && Array.isArray(savedState.layers)) {
         dispatch({ type: 'RESET' });
         savedState.layers.forEach((layer: Layer) => {
           dispatch({ type: 'ADD_LAYER', layer });
@@ -289,6 +337,9 @@ export function DrawingProvider({ children }: { children: ReactNode }) {
     const newLayer: Layer = {
       id: `layer-${Date.now()}`,
       name: name || `Layer ${state.layers.length + 1}`,
+      type: 'raster', // FIXED: Added missing type
+      data: null,     // FIXED: Added missing data
+      order: state.layers.length, // FIXED: Added missing order
       strokes: [],
       opacity: 1,
       blendMode: 'normal',
@@ -344,9 +395,9 @@ export function DrawingProvider({ children }: { children: ReactNode }) {
         shared: false,
       };
       
+      // FIXED: Handle portfolio structure properly
       await dataManager.savePortfolio({
-        ...portfolio,
-        artworks: [...portfolio.artworks, newArtwork],
+        ...newArtwork,
       });
     } catch (error) {
       console.error('Failed to save drawing:', error);
@@ -357,7 +408,8 @@ export function DrawingProvider({ children }: { children: ReactNode }) {
   const loadDrawing = async (id: string) => {
     try {
       const savedDrawing = await dataManager.load(`drawing_${id}`);
-      if (savedDrawing && savedDrawing.layers) {
+      // FIXED: Check if savedDrawing exists and has layers property
+      if (savedDrawing && savedDrawing.layers && Array.isArray(savedDrawing.layers)) {
         dispatch({ type: 'RESET' });
         savedDrawing.layers.forEach((layer: Layer) => {
           dispatch({ type: 'ADD_LAYER', layer });

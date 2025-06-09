@@ -19,8 +19,10 @@ export class DataManager {
     USER_PREFERENCES: 'user_preferences',
     LEARNING_PROGRESS: 'learning_progress',
     ARTWORKS: 'artworks',
+    PORTFOLIO: 'portfolio',
     OFFLINE_QUEUE: 'offline_queue',
     CACHE_METADATA: 'cache_metadata',
+    DRAWING_STATE: 'drawing_state',
   };
 
   private constructor() {
@@ -92,6 +94,17 @@ export class DataManager {
     // Debounce writes to storage
     this.pendingWrites.set(key, value);
     this.schedulePendingWrites();
+  }
+
+  // FIXED: Added missing methods that other parts of the code expect
+  
+  // Alias methods for backward compatibility and different naming conventions
+  public async load<T>(key: string): Promise<T | null> {
+    return this.get<T>(key);
+  }
+
+  public async save(key: string, value: any): Promise<void> {
+    return this.set(key, value);
   }
 
   private schedulePendingWrites(): void {
@@ -292,6 +305,26 @@ export class DataManager {
   public async getAllArtworks(): Promise<any[]> {
     const artworks = await this.get<Record<string, any>>(this.storageKeys.ARTWORKS);
     return artworks ? Object.values(artworks) : [];
+  }
+
+  // FIXED: Added missing portfolio methods
+  public async getPortfolio(): Promise<any[]> {
+    const portfolio = await this.get<any[]>(this.storageKeys.PORTFOLIO);
+    return portfolio || [];
+  }
+
+  public async savePortfolio(portfolioData: any): Promise<void> {
+    // Get current portfolio
+    const currentPortfolio = await this.getPortfolio();
+    
+    // Add new artwork to portfolio
+    const updatedPortfolio = [...currentPortfolio, {
+      ...portfolioData,
+      id: portfolioData.id || `artwork_${Date.now()}`,
+      createdAt: portfolioData.createdAt || new Date(),
+    }];
+    
+    await this.set(this.storageKeys.PORTFOLIO, updatedPortfolio);
   }
 
   // Offline queue management

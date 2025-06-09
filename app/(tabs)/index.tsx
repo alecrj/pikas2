@@ -14,6 +14,7 @@ import { useTheme } from '../../src/contexts/ThemeContext';
 import { useUserProgress, useProgress, useLearning } from '../../src/contexts/UserProgressContext';
 import { useLearning as useLessonContext } from '../../src/contexts/LearningContext';
 import { challengeSystem } from '../../src/engines/community/ChallengeSystem';
+import { typography } from '../../src/constants/typography'; // FIXED: Import typography
 import * as Haptics from 'expo-haptics';
 import {
   Zap,
@@ -24,13 +25,14 @@ import {
   Palette,
   Users,
   TrendingUp,
+  BookOpen, // FIXED: Moved import to top
 } from 'lucide-react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { colors, spacing, typography, borderRadius } = useTheme();
+  const { colors, spacing, borderRadius } = useTheme(); // FIXED: Removed typography from theme
   const { user, isLoading, dailyGoalProgress, checkDailyStreak } = useUserProgress();
   const { level, xp, xpToNextLevel, xpProgress, streakDays } = useProgress();
   const { recommendedLessons, learningProgress } = useLearning();
@@ -87,7 +89,8 @@ export default function HomeScreen() {
         <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>
           Welcome back,
         </Text>
-        <Text style={[styles.userName, { color: colors.text }, typography.h2]}>
+        {/* FIXED: Applied typography styles separately */}
+        <Text style={[styles.userName, { color: colors.text, fontSize: typography.h2.fontSize, fontWeight: typography.h2.fontWeight }]}>
           {user.displayName}
         </Text>
       </View>
@@ -102,7 +105,8 @@ export default function HomeScreen() {
         >
           <View style={styles.progressHeader}>
             <View>
-              <Text style={[styles.levelText, typography.h3]}>
+              {/* FIXED: Applied typography styles separately */}
+              <Text style={[styles.levelText, { fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
                 Level {level}
               </Text>
               <Text style={styles.xpText}>
@@ -152,7 +156,8 @@ export default function HomeScreen() {
 
       {/* Quick Actions */}
       <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
-        <Text style={[styles.sectionTitle, { color: colors.text }, typography.h3]}>
+        {/* FIXED: Applied typography styles separately */}
+        <Text style={[styles.sectionTitle, { color: colors.text, fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
           Quick Actions
         </Text>
         
@@ -226,7 +231,8 @@ export default function HomeScreen() {
       {/* Daily Challenge */}
       {dailyChallenge && (
         <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }, typography.h3]}>
+          {/* FIXED: Applied typography styles separately */}
+          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
             Today's Challenge
           </Text>
           
@@ -252,7 +258,8 @@ export default function HomeScreen() {
             <View style={styles.challengeContent}>
               <Trophy size={32} color="white" />
               <View style={styles.challengeText}>
-                <Text style={[styles.challengeTitle, typography.h4]}>
+                {/* FIXED: Applied typography styles separately */}
+                <Text style={[styles.challengeTitle, { fontSize: typography.h4.fontSize, fontWeight: typography.h4.fontWeight }]}>
                   {dailyChallenge.theme}
                 </Text>
                 <Text style={styles.challengeDescription}>
@@ -268,7 +275,8 @@ export default function HomeScreen() {
       {/* Learning Insights */}
       {insights.length > 0 && (
         <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }, typography.h3]}>
+          {/* FIXED: Applied typography styles separately */}
+          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
             Insights
           </Text>
           
@@ -292,16 +300,17 @@ export default function HomeScreen() {
                 <TrendingUp 
                   size={20} 
                   color={
-                    insight.priority === 'high' ? colors.success :
-                    insight.priority === 'medium' ? colors.warning :
+                    insight.type === 'achievement' ? colors.success :
+                    insight.type === 'improvement' ? colors.warning :
                     colors.info
                   } 
                 />
                 <Text style={[styles.insightTitle, { color: colors.text }]}>
                   {insight.title}
                 </Text>
+                {/* FIXED: Use description instead of message */}
                 <Text style={[styles.insightMessage, { color: colors.textSecondary }]}>
-                  {insight.message}
+                  {insight.description}
                 </Text>
               </View>
             ))}
@@ -312,7 +321,8 @@ export default function HomeScreen() {
       {/* Community Activity */}
       <View style={[styles.section, { paddingHorizontal: spacing.md, marginBottom: 100 }]}>
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }, typography.h3]}>
+          {/* FIXED: Applied typography styles separately */}
+          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
             Community
           </Text>
           <Pressable onPress={() => router.push('/gallery')}>
@@ -365,7 +375,6 @@ const styles = StyleSheet.create({
   },
   levelText: {
     color: 'white',
-    fontWeight: '600',
   },
   xpText: {
     color: 'rgba(255, 255, 255, 0.8)',
@@ -427,7 +436,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionTitle: {
-    fontWeight: '600',
     marginBottom: 16,
   },
   seeAllText: {
@@ -472,7 +480,6 @@ const styles = StyleSheet.create({
   },
   challengeTitle: {
     color: 'white',
-    fontWeight: '600',
   },
   challengeDescription: {
     color: 'rgba(255, 255, 255, 0.8)',
@@ -501,6 +508,3 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
-
-// Add missing import
-import { BookOpen } from 'lucide-react-native';
