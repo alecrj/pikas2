@@ -1,38 +1,34 @@
+import { AppState, AppStateStatus } from 'react-native';
 import { PerformanceMetrics } from '../../types';
+import { errorHandler } from './ErrorHandler';
 
 /**
- * High-performance monitoring system for maintaining 60fps drawing experience
- * Tracks frame rates, memory usage, and provides optimization recommendations
+ * Performance Monitor - React Native Compatible
+ * Tracks app performance metrics without relying on web APIs
  */
 export class PerformanceMonitor {
   private static instance: PerformanceMonitor;
-  private metrics: PerformanceMetrics;
-  private frameStartTime: number = 0;
-  private frameCount: number = 0;
-  private lastFPSUpdate: number = 0;
-  private observers: Set<(metrics: PerformanceMetrics) => void> = new Set();
-  private rafId: number | null = null;
-  private isInitialized: boolean = false;
-  
-  private performanceThresholds = {
-    targetFPS: 60,
-    minAcceptableFPS: 30,
-    maxFrameTime: 16.67, // 60fps target
-    maxMemoryUsage: 150 * 1024 * 1024, // 150MB
-    maxDrawCalls: 1000,
-    maxInputLatency: 16, // 1 frame
+  private isMonitoring: boolean = false;
+  private metrics: PerformanceMetrics = {
+    fps: 60,
+    frameTime: 16.67,
+    memoryUsage: 0,
+    drawCalls: 0,
+    inputLatency: 0,
+    renderTime: 0,
   };
 
-  private constructor() {
-    this.metrics = {
-      fps: 60,
-      frameTime: 0,
-      memoryUsage: 0,
-      drawCalls: 0,
-      inputLatency: 0,
-      renderTime: 0,
-    };
-  }
+  private frameCount: number = 0;
+  private lastFrameTime: number = 0;
+  private drawCallCount: number = 0;
+  private renderTimes: number[] = [];
+  private memoryWarningThreshold: number = 100; // MB
+
+  // Performance tracking intervals
+  private fpsInterval: NodeJS.Timeout | null = null;
+  private metricsInterval: NodeJS.Timeout | null = null;
+
+  private constructor() {}
 
   public static getInstance(): PerformanceMonitor {
     if (!PerformanceMonitor.instance) {
@@ -41,206 +37,222 @@ export class PerformanceMonitor {
     return PerformanceMonitor.instance;
   }
 
-  // FIXED: Added missing initialize method
-  public initialize(): void {
-    if (this.isInitialized) {
-      return;
-    }
-    
-    this.startMonitoring();
-    this.isInitialized = true;
-    console.log('PerformanceMonitor initialized');
-  }
-
-  // FIXED: Made startMonitoring public and renamed internal method
   public startMonitoring(): void {
-    if (this.rafId) {
-      // Already monitoring
-      return;
-    }
+    if (this.isMonitoring) return;
+    
+    this.isMonitoring = true;
+    console.log('Performance monitoring started (React Native mode)');
 
-    this.beginMonitoringLoop();
+    // Monitor app state changes
+    AppState.addEventListener('change', this.handleAppStateChange);
+
+    // Start FPS monitoring
+    this.startFPSMonitoring();
+
+    // Start periodic metrics collection
+    this.startMetricsCollection();
   }
 
-  private beginMonitoringLoop(): void {
-    const monitor = () => {
-      const now = performance.now();
-      
-      // Calculate frame time
-      if (this.frameStartTime) {
-        const frameTime = now - this.frameStartTime;
-        this.metrics.frameTime = frameTime;
-        
-        // Update FPS every second
-        this.frameCount++;
-        if (now - this.lastFPSUpdate >= 1000) {
-          this.metrics.fps = Math.round((this.frameCount * 1000) / (now - this.lastFPSUpdate));
-          this.frameCount = 0;
-          this.lastFPSUpdate = now;
-          
-          // Update memory usage if available
-          if ('memory' in performance) {
-            this.metrics.memoryUsage = (performance as any).memory.usedJSHeapSize;
-          }
-          
-          // Notify observers
-          this.notifyObservers();
-          
-          // Check for performance issues
-          this.checkPerformance();
-        }
+  public stopMonitoring(): void {
+    if (!this.isMonitoring) return;
+
+    this.isMonitoring = false;
+    console.log('Performance monitoring stopped');
+
+    // Remove app state listener
+    AppState.removeEventListener('change', this.handleAppStateChange);
+
+    // Clear intervals
+    if (this.fpsInterval) {
+      clearInterval(this.fpsInterval);
+      this.fpsInterval = null;
+    }
+
+    if (this.metricsInterval) {
+      clearInterval(this.metricsInterval);
+      this.metricsInterval = null;
+    }
+  }
+
+  private handleAppStateChange = (nextAppState: AppStateStatus) => {
+    if (nextAppState === 'active') {
+      console.log('App became active - resuming performance monitoring');
+      if (!this.isMonitoring) {
+        this.startMonitoring();
       }
-      
-      this.frameStartTime = now;
-      this.rafId = requestAnimationFrame(monitor);
+    } else if (nextAppState === 'background') {
+      console.log('App went to background - pausing performance monitoring');
+    }
+  };
+
+  private startFPSMonitoring(): void {
+    let frameStartTime = performance.now();
+    let frameCount = 0;
+
+    const measureFrame = () => {
+      const now = performance.now();
+      frameCount++;
+
+      // Calculate FPS every second
+      if (now - frameStartTime >= 1000) {
+        this.metrics.fps = frameCount;
+        this.metrics.frameTime = 1000 / frameCount;
+
+        // Check for performance issues
+        if (this.metrics.fps < 50) {
+          this.reportPerformanceIssue({
+            type: 'low_fps',
+            fps: this.metrics.fps,
+            frameTime: this.metrics.frameTime,
+            recommendation: 'Reduce active layers or drawing complexity'
+          });
+        }
+
+        // Reset counters
+        frameCount = 0;
+        frameStartTime = now;
+      }
+
+      if (this.isMonitoring) {
+        requestAnimationFrame(measureFrame);
+      }
     };
-    
-    monitor();
+
+    requestAnimationFrame(measureFrame);
   }
 
-  private checkPerformance(): void {
-    const { fps, memoryUsage, frameTime, drawCalls, inputLatency } = this.metrics;
-    
-    // Critical performance issues
-    if (fps < this.performanceThresholds.minAcceptableFPS) {
-      this.handleCriticalPerformance();
+  private startMetricsCollection(): void {
+    this.metricsInterval = setInterval(() => {
+      this.collectMetrics();
+    }, 5000); // Collect metrics every 5 seconds
+  }
+
+  private collectMetrics(): void {
+    // Estimate memory usage (React Native doesn't have direct access)
+    // This is a rough estimate based on app usage patterns
+    const estimatedMemory = this.estimateMemoryUsage();
+    this.metrics.memoryUsage = estimatedMemory;
+
+    // Calculate average render time
+    if (this.renderTimes.length > 0) {
+      const avgRenderTime = this.renderTimes.reduce((sum, time) => sum + time, 0) / this.renderTimes.length;
+      this.metrics.renderTime = avgRenderTime;
+      
+      // Keep only recent render times
+      if (this.renderTimes.length > 100) {
+        this.renderTimes = this.renderTimes.slice(-50);
+      }
     }
-    
-    // Memory warnings
-    if (memoryUsage > this.performanceThresholds.maxMemoryUsage) {
-      this.handleMemoryWarning();
-    }
-    
-    // Frame time issues
-    if (frameTime > this.performanceThresholds.maxFrameTime * 1.5) {
-      this.handleFrameDrops();
-    }
-    
-    // Input latency issues
-    if (inputLatency > this.performanceThresholds.maxInputLatency) {
-      this.handleInputLatency();
-    }
-  }
 
-  private handleCriticalPerformance(): void {
-    console.warn('Critical performance issue detected:', {
-      fps: this.metrics.fps,
-      frameTime: this.metrics.frameTime,
-      recommendation: 'Reduce active layers or drawing complexity',
-    });
-    
-    // Emit performance degradation event
-    this.emitPerformanceEvent('critical', {
-      type: 'low_fps',
-      metrics: this.metrics,
-    });
-  }
-
-  private handleMemoryWarning(): void {
-    console.warn('High memory usage detected:', {
-      usage: this.metrics.memoryUsage,
-      recommendation: 'Clear undo history or merge layers',
-    });
-    
-    this.emitPerformanceEvent('warning', {
-      type: 'high_memory',
-      metrics: this.metrics,
-    });
-  }
-
-  private handleFrameDrops(): void {
-    this.emitPerformanceEvent('warning', {
-      type: 'frame_drops',
-      metrics: this.metrics,
-    });
-  }
-
-  private handleInputLatency(): void {
-    this.emitPerformanceEvent('warning', {
-      type: 'input_latency',
-      metrics: this.metrics,
-    });
-  }
-
-  private emitPerformanceEvent(severity: 'warning' | 'critical', data: any): void {
-    // This would integrate with error tracking service
-    if (typeof window !== 'undefined' && (window as any).performanceEventHandler) {
-      (window as any).performanceEventHandler({ severity, ...data });
+    // Check for memory warnings
+    if (this.metrics.memoryUsage > this.memoryWarningThreshold) {
+      this.reportPerformanceIssue({
+        type: 'high_memory',
+        memoryUsage: this.metrics.memoryUsage,
+        recommendation: 'Clear unused resources or reduce layer count'
+      });
     }
   }
 
+  private estimateMemoryUsage(): number {
+    // Rough estimation based on draw calls and other factors
+    // In a real app, you might use native modules to get actual memory usage
+    const baseMemory = 30; // Base app memory in MB
+    const drawCallMemory = this.drawCallCount * 0.1; // Estimate memory per draw call
+    const layerMemory = 10; // Estimate for layers and canvas data
+    
+    return baseMemory + drawCallMemory + layerMemory;
+  }
+
+  private reportPerformanceIssue(issue: any): void {
+    console.warn('Critical performance issue detected:', issue);
+    
+    errorHandler.handleError({
+      code: 'PERFORMANCE_ISSUE',
+      message: `Performance issue: ${issue.type}`,
+      severity: 'medium',
+      context: issue,
+      timestamp: new Date(),
+    });
+  }
+
+  // Public API methods
   public recordDrawCall(): void {
-    this.metrics.drawCalls++;
+    this.drawCallCount++;
+    this.metrics.drawCalls = this.drawCallCount;
   }
 
-  public resetDrawCalls(): void {
-    this.metrics.drawCalls = 0;
+  public recordRenderTime(renderTime: number): void {
+    this.renderTimes.push(renderTime);
   }
 
   public recordInputLatency(latency: number): void {
     this.metrics.inputLatency = latency;
   }
 
-  public recordRenderTime(time: number): void {
-    this.metrics.renderTime = time;
-  }
-
   public getMetrics(): PerformanceMetrics {
     return { ...this.metrics };
   }
 
-  public subscribe(callback: (metrics: PerformanceMetrics) => void): () => void {
-    this.observers.add(callback);
-    return () => this.observers.delete(callback);
+  public resetMetrics(): void {
+    this.drawCallCount = 0;
+    this.renderTimes = [];
+    this.metrics = {
+      fps: 60,
+      frameTime: 16.67,
+      memoryUsage: 0,
+      drawCalls: 0,
+      inputLatency: 0,
+      renderTime: 0,
+    };
   }
 
-  private notifyObservers(): void {
-    this.observers.forEach(callback => callback(this.getMetrics()));
+  // App lifecycle methods
+  public recordAppLaunch(): void {
+    console.log('App launch recorded');
+    this.resetMetrics();
   }
 
-  public destroy(): void {
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
-    this.observers.clear();
-    this.isInitialized = false;
+  public recordScreenTransition(screenName: string): void {
+    console.log(`Screen transition recorded: ${screenName}`);
   }
 
-  // Performance optimization utilities
-  public shouldReduceQuality(): boolean {
-    return this.metrics.fps < this.performanceThresholds.minAcceptableFPS;
-  }
-
-  public getQualityLevel(): 'high' | 'medium' | 'low' {
-    if (this.metrics.fps >= this.performanceThresholds.targetFPS * 0.9) {
-      return 'high';
-    } else if (this.metrics.fps >= this.performanceThresholds.minAcceptableFPS) {
-      return 'medium';
-    }
-    return 'low';
-  }
-
+  // Performance optimization suggestions
   public getOptimizationSuggestions(): string[] {
     const suggestions: string[] = [];
-    
-    if (this.metrics.fps < this.performanceThresholds.targetFPS) {
-      suggestions.push('Consider reducing canvas resolution or layer count');
+
+    if (this.metrics.fps < 50) {
+      suggestions.push('Reduce number of active layers');
+      suggestions.push('Simplify brush complexity');
+      suggestions.push('Lower canvas resolution for complex scenes');
     }
-    
-    if (this.metrics.memoryUsage > this.performanceThresholds.maxMemoryUsage * 0.8) {
-      suggestions.push('Memory usage is high. Clear undo history or merge layers');
+
+    if (this.metrics.memoryUsage > this.memoryWarningThreshold) {
+      suggestions.push('Clear undo history');
+      suggestions.push('Merge completed layers');
+      suggestions.push('Reduce image resolution');
     }
-    
-    if (this.metrics.drawCalls > this.performanceThresholds.maxDrawCalls * 0.8) {
-      suggestions.push('Too many draw calls. Consider layer optimization');
+
+    if (this.metrics.renderTime > 20) {
+      suggestions.push('Enable performance mode');
+      suggestions.push('Reduce anti-aliasing quality');
+      suggestions.push('Limit simultaneous animations');
     }
-    
-    if (this.metrics.inputLatency > this.performanceThresholds.maxInputLatency) {
-      suggestions.push('Input latency detected. Optimize touch event handling');
-    }
-    
+
     return suggestions;
+  }
+
+  // Debug information
+  public getDebugInfo(): object {
+    return {
+      isMonitoring: this.isMonitoring,
+      metrics: this.metrics,
+      frameCount: this.frameCount,
+      drawCallCount: this.drawCallCount,
+      renderTimesCount: this.renderTimes.length,
+      memoryWarningThreshold: this.memoryWarningThreshold,
+      optimizationSuggestions: this.getOptimizationSuggestions(),
+    };
   }
 }
 

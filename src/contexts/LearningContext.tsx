@@ -18,7 +18,7 @@ export interface LearningContextType {
 
   skillTrees: SkillTree[];
   availableLessons: Lesson[];
-  unlockedLessons: string[];
+  unlockedLessons: string[]; // FIXED: This should be string[] (lesson IDs), not Lesson[]
 
   learningProgress: LearningProgress | null;
   completedLessons: string[];
@@ -59,7 +59,7 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [isLoadingLesson, setIsLoadingLesson] = useState(false);
   const [skillTrees, setSkillTrees] = useState<SkillTree[]>([]);
   const [availableLessons, setAvailableLessons] = useState<Lesson[]>([]);
-  const [unlockedLessons, setUnlockedLessons] = useState<string[]>([]);
+  const [unlockedLessons, setUnlockedLessons] = useState<string[]>([]); // FIXED: string[] not Lesson[]
   const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [currentStreak, setCurrentStreak] = useState(0);
@@ -105,8 +105,10 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
         setCurrentStreak(progress.currentStreak);
       }
 
-      const unlocked = skillTreeManager.getUnlockedLessons();
-      setUnlockedLessons(unlocked);
+      // FIXED: Get unlocked lesson IDs, not full Lesson objects
+      const unlockedLessonObjects = skillTreeManager.getUnlockedLessons();
+      const unlockedLessonIds = unlockedLessonObjects.map(lesson => lesson.id);
+      setUnlockedLessons(unlockedLessonIds);
 
       if (trees.length > 0) setCurrentSkillTree(trees[0]);
 
@@ -246,6 +248,12 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
         setLearningProgress(progress);
         setCompletedLessons(progress.completedLessons);
       }
+      
+      // Update unlocked lessons after completing a lesson
+      const unlockedLessonObjects = skillTreeManager.getUnlockedLessons();
+      const unlockedLessonIds = unlockedLessonObjects.map(lesson => lesson.id);
+      setUnlockedLessons(unlockedLessonIds);
+      
       setCurrentLesson(null);
       setLessonState(null);
       updateRecommendations();

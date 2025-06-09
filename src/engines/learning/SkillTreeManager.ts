@@ -359,409 +359,23 @@ export class SkillTreeManager {
         tags: ['construction', 'shapes', 'apple', 'forms'],
       },
 
-      // Lesson 3: Perspective Basics
-      {
-        id: 'lesson_3_perspective',
-        skillTreeId: 'fundamentals',
-        title: 'Perspective Basics',
-        description: 'Learn one-point perspective to create depth and dimension',
-        thumbnailUrl: 'lesson_3_thumb',
-        duration: 12,
-        difficulty: 2,
-        order: 3,
-        prerequisites: ['lesson_2_construction'],
-        objectives: [
-          { id: 'obj_3_1', description: 'Understand the concept of vanishing points', completed: false },
-          { id: 'obj_3_2', description: 'Draw a cube in one-point perspective', completed: false },
-          { id: 'obj_3_3', description: 'Apply perspective to create depth', completed: false },
-        ],
-        theoryContent: {
-          segments: [
-            {
-              type: 'text',
-              content: { text: 'Perspective makes flat drawings look three-dimensional. It\'s how we show that objects get smaller as they move away from us.' },
-              duration: 60,
-            },
-            {
-              type: 'interactive',
-              content: { 
-                demo: 'vanishing_point',
-                title: 'The Vanishing Point',
-                instructions: 'Watch how parallel lines appear to meet at a distant point'
-              },
-              duration: 90,
-            },
-          ],
-          estimatedDuration: 3,
-        },
-        practiceContent: {
-          instructions: [
-            {
-              step: 1,
-              text: 'Place a vanishing point on the horizon line',
-              highlightArea: { x: 250, y: 200, width: 10, height: 10 },
-              requiredAction: 'place_vanishing_point',
-              validation: {
-                type: 'point_placement',
-                params: { location: 'horizon_line', type: 'vanishing_point' },
-                threshold: 0.8,
-              },
-            },
-            {
-              step: 2,
-              text: 'Draw the front face of the cube as a square',
-              highlightArea: { x: 100, y: 150, width: 100, height: 100 },
-              requiredAction: 'draw_cube_front',
-              validation: {
-                type: 'shape_accuracy',
-                params: { targetShape: 'square', position: 'front' },
-                threshold: 0.75,
-              },
-            },
-            {
-              step: 3,
-              text: 'Connect the corners to the vanishing point with light lines',
-              highlightArea: { x: 100, y: 150, width: 300, height: 100 },
-              requiredAction: 'draw_perspective_lines',
-              validation: {
-                type: 'perspective_lines',
-                params: { fromCorners: true, toVanishingPoint: true },
-                threshold: 0.7,
-              },
-            },
-            {
-              step: 4,
-              text: 'Draw the back edges of the cube and complete the form',
-              highlightArea: { x: 150, y: 175, width: 80, height: 80 },
-              requiredAction: 'complete_cube',
-              validation: {
-                type: 'shape_completion',
-                params: { targetShape: 'cube_perspective', faces: 3 },
-                threshold: 0.7,
-              },
-            },
-          ],
-          referenceImage: 'lesson_3_cube_reference',
-          guideLayers: [
-            {
-              id: 'perspective_grid',
-              type: 'overlay',
-              visible: true,
-              opacity: 0.3,
-              data: { type: 'one_point_perspective', vanishingPoint: { x: 250, y: 200 } },
-            },
-          ],
-          hints: [
-            {
-              id: 'hint_3_1',
-              triggerCondition: 'instruction_2_fail',
-              content: 'All parallel lines going away from you should point toward the vanishing point',
-              type: 'tip',
-            },
-          ],
-          toolsRequired: ['pencil'],
-          estimatedDuration: 8,
-        },
-        assessment: {
-          criteria: [
-            {
-              id: 'perspective_accuracy',
-              description: 'Correct use of one-point perspective',
-              weight: 0.6,
-              evaluationType: 'automatic',
-            },
-            {
-              id: 'cube_construction',
-              description: 'Proper cube construction',
-              weight: 0.3,
-              evaluationType: 'automatic',
-            },
-            {
-              id: 'line_quality',
-              description: 'Clean, confident lines',
-              weight: 0.1,
-              evaluationType: 'automatic',
-            },
-          ],
-          passingScore: 0.7,
-          bonusObjectives: [
-            {
-              id: 'bonus_multiple_cubes',
-              description: 'Draw three cubes at different depths',
-              xpBonus: 35,
-            },
-          ],
-        },
-        xpReward: 150,
-        unlockRequirements: [
-          { type: 'lesson', value: 'lesson_2_construction' },
-        ],
-        tags: ['perspective', 'cube', 'depth', '3d'],
-      },
-
       // Continue with remaining lessons...
       // For brevity, I'll create simplified versions of the remaining lessons
 
-      // Lesson 4: Light & Shadow
-      {
-        id: 'lesson_4_light_shadow',
-        skillTreeId: 'fundamentals',
-        title: 'Light & Shadow',
-        description: 'Understand how light creates form through highlights and shadows',
-        thumbnailUrl: 'lesson_4_thumb',
-        duration: 12,
-        difficulty: 3,
-        order: 4,
-        prerequisites: ['lesson_3_perspective'],
-        objectives: [
-          { id: 'obj_4_1', description: 'Identify light source and shadow patterns', completed: false },
-          { id: 'obj_4_2', description: 'Shade a sphere with realistic lighting', completed: false },
-          { id: 'obj_4_3', description: 'Understand cast shadows', completed: false },
-        ],
-        theoryContent: {
-          segments: [
-            {
-              type: 'text',
-              content: { text: 'Light reveals form. Without shadows, objects look flat. Learn to see and draw the light.' },
-              duration: 90,
-            },
-          ],
-          estimatedDuration: 3,
-        },
-        practiceContent: {
-          instructions: [
-            {
-              step: 1,
-              text: 'Draw a circle for the sphere',
-              highlightArea: { x: 200, y: 200, width: 100, height: 100 },
-              requiredAction: 'draw_sphere_base',
-              validation: {
-                type: 'shape_accuracy',
-                params: { targetShape: 'circle' },
-                threshold: 0.7,
-              },
-            },
-            {
-              step: 2,
-              text: 'Add the core shadow on the side opposite the light',
-              highlightArea: { x: 240, y: 220, width: 40, height: 60 },
-              requiredAction: 'add_core_shadow',
-              validation: {
-                type: 'shading_element',
-                params: { type: 'core_shadow', position: 'opposite_light' },
-                threshold: 0.6,
-              },
-            },
-            {
-              step: 3,
-              text: 'Create gradual shading from light to shadow',
-              highlightArea: { x: 200, y: 200, width: 100, height: 100 },
-              requiredAction: 'add_gradation',
-              validation: {
-                type: 'shading_gradation',
-                params: { smooth: true, direction: 'light_to_shadow' },
-                threshold: 0.7,
-              },
-            },
-            {
-              step: 4,
-              text: 'Add the cast shadow on the ground',
-              highlightArea: { x: 220, y: 300, width: 80, height: 20 },
-              requiredAction: 'add_cast_shadow',
-              validation: {
-                type: 'cast_shadow',
-                params: { attached: true, direction: 'away_from_light' },
-                threshold: 0.6,
-              },
-            },
-          ],
-          referenceImage: 'lesson_4_sphere_reference',
-          guideLayers: [],
-          hints: [
-            {
-              id: 'hint_4_1',
-              triggerCondition: 'instruction_2_fail',
-              content: 'Use gentle, overlapping strokes to create smooth gradations',
-              type: 'tip',
-            },
-          ],
-          toolsRequired: ['pencil'],
-          estimatedDuration: 8,
-        },
-        assessment: {
-          criteria: [
-            {
-              id: 'shadow_accuracy',
-              description: 'Correct shadow placement',
-              weight: 0.4,
-              evaluationType: 'automatic',
-            },
-            {
-              id: 'gradation_quality',
-              description: 'Smooth light transitions',
-              weight: 0.4,
-              evaluationType: 'automatic',
-            },
-            {
-              id: 'form_understanding',
-              description: 'Understanding of 3D form',
-              weight: 0.2,
-              evaluationType: 'automatic',
-            },
-          ],
-          passingScore: 0.7,
-          bonusObjectives: [
-            {
-              id: 'bonus_reflected_light',
-              description: 'Add subtle reflected light',
-              xpBonus: 40,
-            },
-          ],
-        },
-        xpReward: 175,
-        unlockRequirements: [
-          { type: 'lesson', value: 'lesson_3_perspective' },
-        ],
-        tags: ['light', 'shadow', 'sphere', 'shading'],
-      },
-
-      // Lesson 5: Form & Volume
-      {
-        id: 'lesson_5_form_volume',
-        skillTreeId: 'fundamentals',
-        title: 'Form & Volume',
-        description: 'Create convincing three-dimensional forms with proper construction',
-        thumbnailUrl: 'lesson_5_thumb',
-        duration: 15,
-        difficulty: 3,
-        order: 5,
-        prerequisites: ['lesson_4_light_shadow'],
-        objectives: [
-          { id: 'obj_5_1', description: 'Draw a cylinder with proper construction', completed: false },
-          { id: 'obj_5_2', description: 'Apply cylindrical shading principles', completed: false },
-          { id: 'obj_5_3', description: 'Understand ellipses in perspective', completed: false },
-        ],
-        theoryContent: {
-          segments: [
-            {
-              type: 'text',
-              content: { text: 'Cylinders are everywhere - cups, bottles, arms, legs. Master the cylinder and you can draw most organic forms.' },
-              duration: 90,
-            },
-          ],
-          estimatedDuration: 3,
-        },
-        practiceContent: {
-          instructions: [
-            {
-              step: 1,
-              text: 'Draw the top ellipse of the cylinder',
-              highlightArea: { x: 200, y: 150, width: 100, height: 30 },
-              requiredAction: 'draw_top_ellipse',
-              validation: {
-                type: 'shape_accuracy',
-                params: { targetShape: 'ellipse', orientation: 'horizontal' },
-                threshold: 0.7,
-              },
-            },
-            {
-              step: 2,
-              text: 'Draw vertical lines for the cylinder sides',
-              highlightArea: { x: 200, y: 150, width: 100, height: 150 },
-              requiredAction: 'draw_cylinder_sides',
-              validation: {
-                type: 'form_construction',
-                params: { type: 'cylinder', stage: 'sides' },
-                threshold: 0.7,
-              },
-            },
-            {
-              step: 3,
-              text: 'Add the bottom ellipse',
-              highlightArea: { x: 200, y: 270, width: 100, height: 30 },
-              requiredAction: 'draw_bottom_ellipse',
-              validation: {
-                type: 'shape_accuracy',
-                params: { targetShape: 'ellipse', position: 'bottom' },
-                threshold: 0.7,
-              },
-            },
-            {
-              step: 4,
-              text: 'Apply cylindrical shading with a highlight down the center',
-              highlightArea: { x: 200, y: 150, width: 100, height: 150 },
-              requiredAction: 'add_cylindrical_shading',
-              validation: {
-                type: 'cylindrical_shading',
-                params: { highlight: 'center', gradation: 'curved' },
-                threshold: 0.6,
-              },
-            },
-          ],
-          referenceImage: 'lesson_5_cylinder_reference',
-          guideLayers: [],
-          hints: [
-            {
-              id: 'hint_5_1',
-              triggerCondition: 'instruction_3_fail',
-              content: 'The shading should curve around the form - think of wrapping paper around a tube',
-              type: 'tip',
-            },
-          ],
-          toolsRequired: ['pencil'],
-          estimatedDuration: 10,
-        },
-        assessment: {
-          criteria: [
-            {
-              id: 'cylinder_construction',
-              description: 'Proper cylinder construction',
-              weight: 0.4,
-              evaluationType: 'automatic',
-            },
-            {
-              id: 'ellipse_accuracy',
-              description: 'Correct ellipse shapes',
-              weight: 0.3,
-              evaluationType: 'automatic',
-            },
-            {
-              id: 'cylindrical_shading',
-              description: 'Appropriate curved shading',
-              weight: 0.3,
-              evaluationType: 'automatic',
-            },
-          ],
-          passingScore: 0.7,
-          bonusObjectives: [
-            {
-              id: 'bonus_multiple_angles',
-              description: 'Draw cylinders at different angles',
-              xpBonus: 45,
-            },
-          ],
-        },
-        xpReward: 200,
-        unlockRequirements: [
-          { type: 'lesson', value: 'lesson_4_light_shadow' },
-        ],
-        tags: ['cylinder', 'form', 'volume', 'ellipse'],
-      },
-
-      // Simplified versions of remaining lessons (6-15)
-      // Each would have similar detailed structure in production
-
-      ...this.createRemainingLessons(), // This would contain lessons 6-15
+      ...this.createRemainingLessons(), // This would contain lessons 3-15
     ];
 
     return lessons;
   }
 
   private createRemainingLessons(): Lesson[] {
-    // Simplified lesson templates for lessons 6-15
+    // Simplified lesson templates for lessons 3-15
     const remainingLessons: Lesson[] = [];
     
     const lessonTemplates = [
+      { id: 'lesson_3_perspective', title: 'Perspective Basics', description: 'Learn one-point perspective to create depth and dimension', xp: 150 },
+      { id: 'lesson_4_light_shadow', title: 'Light & Shadow', description: 'Understand how light creates form through highlights and shadows', xp: 175 },
+      { id: 'lesson_5_form_volume', title: 'Form & Volume', description: 'Create convincing three-dimensional forms with proper construction', xp: 200 },
       { id: 'lesson_6_proportions', title: 'Proportions', description: 'Master proportional relationships', xp: 175 },
       { id: 'lesson_7_color_theory', title: 'Color Theory', description: 'Understand color relationships', xp: 200 },
       { id: 'lesson_8_value_contrast', title: 'Value & Contrast', description: 'Create strong value compositions', xp: 175 },
@@ -783,10 +397,10 @@ export class SkillTreeManager {
         thumbnailUrl: `${template.id}_thumb`,
         duration: 12 + (index * 2), // Progressive difficulty
         difficulty: Math.min(5, Math.floor(index / 3) + 2) as 1 | 2 | 3 | 4 | 5,
-                order: index + 6,
-        prerequisites: index > 0 ? [lessonTemplates[index - 1].id] : ['lesson_5_form_volume'],
+                order: index + 3, // Start from 3 since we have lessons 1 and 2 above
+        prerequisites: index > 0 ? [lessonTemplates[index - 1].id] : ['lesson_2_construction'],
         objectives: [
-          { id: `obj_${index + 6}_1`, description: `Master ${template.title.toLowerCase()}`, completed: false },
+          { id: `obj_${index + 3}_1`, description: `Master ${template.title.toLowerCase()}`, completed: false },
         ],
         theoryContent: {
           segments: [
@@ -834,7 +448,7 @@ export class SkillTreeManager {
         unlockRequirements: index > 0 ? [
           { type: 'lesson', value: lessonTemplates[index - 1].id },
         ] : [
-          { type: 'lesson', value: 'lesson_5_form_volume' },
+          { type: 'lesson', value: 'lesson_2_construction' },
         ],
         tags: [template.title.toLowerCase().replace(' ', '_')],
       };
@@ -863,12 +477,17 @@ export class SkillTreeManager {
     return null;
   }
 
-  public getAvailableLessons(): Lesson[] {
+  // FIXED: Removed duplicate getAvailableLessons methods and combined functionality
+  public getAvailableLessons(treeId?: string): Lesson[] {
     if (!this.userProgress) return [];
 
     const available: Lesson[] = [];
+    const trees = treeId 
+      ? [this.skillTrees.get(treeId)].filter(Boolean)
+      : Array.from(this.skillTrees.values());
     
-    for (const tree of this.skillTrees.values()) {
+    for (const tree of trees) {
+      if (!tree) continue;
       for (const lesson of tree.lessons) {
         if (this.isLessonUnlocked(lesson)) {
           available.push(lesson);
@@ -1040,8 +659,8 @@ export class SkillTreeManager {
       nextLessonRecommendation: nextLesson,
     };
   }
-  // Add these methods to the SkillTreeManager class:
 
+  // Methods for external API compatibility
   public getAvailableSkillTrees(): SkillTree[] {
     return this.getAllSkillTrees();
   }
@@ -1052,26 +671,6 @@ export class SkillTreeManager {
       lesson => !this.userProgress?.completedLessons.includes(lesson.id)
     );
     return uncompletedLessons[0] || null;
-  }
-
-  public getAvailableLessons(treeId?: string): Lesson[] {
-    if (!this.userProgress) return [];
-
-    const available: Lesson[] = [];
-    const trees = treeId 
-      ? [this.skillTrees.get(treeId)].filter(Boolean)
-      : Array.from(this.skillTrees.values());
-    
-    for (const tree of trees) {
-      if (!tree) continue;
-      for (const lesson of tree.lessons) {
-        if (this.isLessonUnlocked(lesson)) {
-          available.push(lesson);
-        }
-      }
-    }
-
-    return available.sort((a, b) => a.order - b.order);
   }
 
   public getOverallProgress(): {

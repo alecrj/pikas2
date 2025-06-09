@@ -47,6 +47,39 @@ import {
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
+// FIXED: Helper function to convert hex string to Color object
+const hexToColor = (hex: string): Color => {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  
+  // Convert RGB to HSB
+  const rNorm = r / 255;
+  const gNorm = g / 255;
+  const bNorm = b / 255;
+  
+  const max = Math.max(rNorm, gNorm, bNorm);
+  const min = Math.min(rNorm, gNorm, bNorm);
+  const delta = max - min;
+  
+  let h = 0;
+  if (delta !== 0) {
+    if (max === rNorm) h = 60 * (((gNorm - bNorm) / delta) % 6);
+    else if (max === gNorm) h = 60 * (((bNorm - rNorm) / delta) + 2);
+    else if (max === bNorm) h = 60 * (((rNorm - gNorm) / delta) + 4);
+  }
+  
+  const s = max === 0 ? 0 : delta / max;
+  const brightness = max;
+  
+  return {
+    hex,
+    rgb: { r, g, b },
+    hsb: { h: h < 0 ? h + 360 : h, s, b: brightness },
+    alpha: 1,
+  };
+};
+
 export default function DrawScreen() {
   const theme = useTheme();
   const { state: drawingState, dispatch: drawingDispatch } = useDrawing();
@@ -252,16 +285,18 @@ export default function DrawScreen() {
         <View style={styles.colorPickerContainer}>
           <Text style={styles.pickerTitle}>Choose Color</Text>
           <View style={styles.colorGrid}>
-            {(drawingState.colorPalette || []).map((color: string) => (
+            {(drawingState.colorPalette || []).map((colorHex: string) => (
               <Pressable
-                key={color}
+                key={colorHex}
                 style={[
                   styles.colorOption,
-                  { backgroundColor: color },
-                  drawingState.currentColor.hex === color && styles.selectedColor
+                  { backgroundColor: colorHex },
+                  drawingState.currentColor.hex === colorHex && styles.selectedColor
                 ]}
                 onPress={() => {
-                  drawingDispatch({ type: 'SET_COLOR', color });
+                  // FIXED: Convert hex string to Color object
+                  const colorObject = hexToColor(colorHex);
+                  drawingDispatch({ type: 'SET_COLOR', color: colorObject });
                   setShowColorPicker(false);
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }}
@@ -271,12 +306,14 @@ export default function DrawScreen() {
           <View style={styles.recentColors}>
             <Text style={styles.recentLabel}>Recent:</Text>
             <ScrollView horizontal>
-              {(drawingState.recentColors || []).map((color: string, index: number) => (
+              {(drawingState.recentColors || []).map((colorHex: string, index: number) => (
                 <Pressable
                   key={`recent-${index}`}
-                  style={[styles.recentColor, { backgroundColor: color }]}
+                  style={[styles.recentColor, { backgroundColor: colorHex }]}
                   onPress={() => {
-                    drawingDispatch({ type: 'SET_COLOR', color });
+                    // FIXED: Convert hex string to Color object
+                    const colorObject = hexToColor(colorHex);
+                    drawingDispatch({ type: 'SET_COLOR', color: colorObject });
                     setShowColorPicker(false);
                   }}
                 />
@@ -434,7 +471,6 @@ export default function DrawScreen() {
 }
 
 const createStyles = (theme: any) => StyleSheet.create({
-  // ...[styles unchanged, paste yours here]...
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

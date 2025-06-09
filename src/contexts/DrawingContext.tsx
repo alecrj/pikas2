@@ -23,7 +23,7 @@ interface DrawingAction {
   brush?: Brush;
   layer?: Layer;
   point?: Point;
-  tool?: string;
+  tool?: DrawingState['currentTool']; // FIXED: Properly typed tool
   zoom?: number;
   pan?: { x: number; y: number };
   size?: { width: number; height: number };
@@ -80,6 +80,100 @@ const defaultColor: Color = {
   alpha: 1,
 };
 
+// FIXED: Create default brushes array
+const createDefaultBrushes = (): Brush[] => [
+  defaultBrush,
+  {
+    id: 'ink-pen',
+    name: 'Ink Pen',
+    category: 'ink',
+    icon: '🖊️',
+    settings: {
+      size: 2,
+      minSize: 1,
+      maxSize: 20,
+      opacity: 1,
+      flow: 1,
+      hardness: 1,
+      spacing: 0.05,
+      smoothing: 0.3,
+      pressureSensitivity: 0.6,
+    },
+    pressureCurve: [0, 0.3, 0.7, 1],
+    tiltSupport: false,
+    customizable: true,
+  },
+  {
+    id: 'watercolor',
+    name: 'Watercolor',
+    category: 'watercolor',
+    icon: '🎨',
+    settings: {
+      size: 8,
+      minSize: 2,
+      maxSize: 50,
+      opacity: 0.6,
+      flow: 0.8,
+      hardness: 0.2,
+      spacing: 0.2,
+      smoothing: 0.7,
+      pressureSensitivity: 0.9,
+    },
+    pressureCurve: [0, 0.1, 0.9, 1],
+    tiltSupport: true,
+    customizable: true,
+  },
+  {
+    id: 'marker',
+    name: 'Marker',
+    category: 'marker',
+    icon: '🖍️',
+    settings: {
+      size: 5,
+      minSize: 2,
+      maxSize: 30,
+      opacity: 0.8,
+      flow: 1,
+      hardness: 0.6,
+      spacing: 0.1,
+      smoothing: 0.4,
+      pressureSensitivity: 0.4,
+    },
+    pressureCurve: [0, 0.5, 0.5, 1],
+    tiltSupport: true,
+    customizable: true,
+  },
+  {
+    id: 'airbrush',
+    name: 'Airbrush',
+    category: 'airbrush',
+    icon: '💨',
+    settings: {
+      size: 12,
+      minSize: 5,
+      maxSize: 100,
+      opacity: 0.3,
+      flow: 0.5,
+      hardness: 0.1,
+      spacing: 0.3,
+      smoothing: 0.8,
+      pressureSensitivity: 0.8,
+      scatter: 0.2,
+    },
+    pressureCurve: [0, 0.2, 0.8, 1],
+    tiltSupport: true,
+    customizable: true,
+  }
+];
+
+// FIXED: Create default color palette
+const createDefaultColorPalette = (): string[] => [
+  '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF',
+  '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080',
+  '#FFC0CB', '#A52A2A', '#808080', '#008000', '#000080',
+  '#FFD700', '#C0C0C0', '#FF69B4', '#DC143C', '#4B0082'
+];
+
 const createDefaultLayer = (id: string = 'layer-1', name: string = 'Layer 1'): Layer => ({
   id,
   name,
@@ -93,6 +187,7 @@ const createDefaultLayer = (id: string = 'layer-1', name: string = 'Layer 1'): L
   strokes: [],
 });
 
+// FIXED: Added all missing properties to initialState
 const initialState: DrawingState = {
   currentTool: 'brush',
   currentBrush: defaultBrush,
@@ -111,11 +206,14 @@ const initialState: DrawingState = {
     pressure: 0,
     tilt: { x: 0, y: 0 },
   },
-  // FIXED: Added missing properties that were causing errors
   canvasSize: { width: 800, height: 600 },
   pan: { x: 0, y: 0 },
   zoom: 1,
   backgroundColor: '#ffffff',
+  // FIXED: Added the missing properties
+  availableBrushes: createDefaultBrushes(),
+  colorPalette: createDefaultColorPalette(),
+  recentColors: ['#000000', '#FFFFFF', '#FF0000'], // Start with basic colors
 };
 
 function drawingReducer(state: DrawingState, action: DrawingAction): DrawingState {
@@ -194,11 +292,34 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         activeLayerId: action.layerId,
       };
 
+    case 'SET_COLOR': // FIXED: Changed from SET_CURRENT_COLOR to match draw.tsx usage
+      if (!action.color) return state;
+      
+      // FIXED: Update recent colors when setting a new color
+      const colorHex = action.color.hex;
+      const updatedRecentColors = [
+        colorHex,
+        ...state.recentColors.filter(c => c !== colorHex)
+      ].slice(0, 10); // Keep last 10 colors
+
+      return {
+        ...state,
+        currentColor: action.color,
+        recentColors: updatedRecentColors,
+      };
+
     case 'SET_CURRENT_COLOR':
       if (!action.color) return state;
       return {
         ...state,
         currentColor: action.color,
+      };
+
+    case 'SET_BRUSH': // FIXED: Changed from SET_CURRENT_BRUSH to match draw.tsx usage
+      if (!action.brush) return state;
+      return {
+        ...state,
+        currentBrush: action.brush,
       };
 
     case 'SET_CURRENT_BRUSH':
@@ -212,7 +333,7 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
       if (!action.tool) return state;
       return {
         ...state,
-        currentTool: action.tool,
+        currentTool: action.tool, // FIXED: Now properly typed
       };
 
     case 'SET_CANVAS_SIZE':

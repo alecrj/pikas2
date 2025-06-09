@@ -1,10 +1,11 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
-import { useTheme } from '../../src/contexts/ThemeContext';
-import { useUserProgress } from '../../src/contexts/UserProgressContext';
+import { Platform, View, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
+import { useTheme } from '../../src/contexts/ThemeContext';
+import { useUserProgress } from '../../src/contexts/UserProgressContext';
 
 // Tab bar icons
 import { 
@@ -13,6 +14,7 @@ import {
   BookOpen,
   Trophy,
   User,
+  Settings,
 } from 'lucide-react-native';
 
 export default function TabLayout() {
@@ -187,8 +189,3 @@ function SettingsButton() {
     </Pressable>
   );
 }
-
-// Missing imports that need to be added at the top
-import { View, Pressable } from 'react-native';
-import { useRouter } from 'expo-router';
-import { Settings } from 'lucide-react-native';
