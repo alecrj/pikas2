@@ -1,712 +1,639 @@
-import { 
-    Point, 
-    Stroke, 
-    Layer, 
-    DrawingState, 
-    Brush, 
-    BlendMode,
-    Dimensions,
-    Color
-  } from '../../types';
-  import { performanceMonitor } from '../core/PerformanceMonitor';
-  import { eventBus } from '../core';
-  import { dataManager } from '../core/DataManager';
+import { Point, Stroke, Layer, Brush, BlendMode, Color } from '../../types';
+import { performanceMonitor } from '../core/PerformanceMonitor';
+import { errorHandler } from '../core/ErrorHandler';
+
+/**
+ * Professional Canvas Engine - 60fps Apple Pencil optimized drawing surface
+ * Handles real-time stroke rendering with pressure sensitivity and advanced compositing
+ */
+export class ProfessionalCanvas {
+  private canvas: HTMLCanvasElement | null = null;
+  private context: CanvasRenderingContext2D | null = null;
+  private offscreenCanvas: HTMLCanvasElement | null = null;
+  private offscreenContext: CanvasRenderingContext2D | null = null;
   
-  /**
-   * Professional Canvas Engine - 60fps drawing with Apple Pencil support
-   * Handles all drawing operations with production-ready performance
-   */
-  export class ProfessionalCanvas {
-    private canvas: HTMLCanvasElement | null = null;
-    private ctx: CanvasRenderingContext2D | null = null;
-    private offscreenCanvas: HTMLCanvasElement | null = null;
-    private offscreenCtx: CanvasRenderingContext2D | null = null;
-    private layerCanvases: Map<string, HTMLCanvasElement> = new Map();
-    
-    private state: DrawingState;
-    private currentStroke: Point[] = [];
-    private strokeBuffer: Point[] = [];
-    private isDrawing = false;
-    private lastPoint: Point | null = null;
-    private undoStack: DrawingState[] = [];
-    private redoStack: DrawingState[] = [];
-    private strokeSmoothing = 0.5;
-    private predictionPoints: Point[] = [];
-    private animationFrameId: number | null = null;
-    private lastRenderTime = 0;
-    
-    // Performance optimization
-    private renderQueued = false;
-    private dirtyRegion: DOMRect | null = null;
-    
-    constructor(initialState?: Partial<DrawingState>) {
-      this.state = {
-        layers: [{
-          id: 'layer-1',
-          name: 'Layer 1',
-          strokes: [],
-          opacity: 1,
-          blendMode: 'normal',
-          visible: true,
-          locked: false
-        }],
-        activeLayerId: 'layer-1',
-        canvasSize: { width: 1024, height: 1024 },
-        zoom: 1,
-        pan: { x: 0, y: 0 },
-        backgroundColor: '#FFFFFF',
-        ...initialState
-      };
-    }
+  private currentStroke: Point[] = [];
+  private isDrawing: boolean = false;
+  private lastPoint: Point | null = null;
+  private strokeId: string = '';
   
-    public initialize(canvas: HTMLCanvasElement): void {
-      this.canvas = canvas;
-      this.ctx = canvas.getContext('2d', {
-        alpha: true,
-        desynchronized: true,
-        willReadFrequently: false
-      });
+  // Performance optimization
+  private frameId: number | null = null;
+  private dirtyRegions: DOMRect[] = [];
+  private lastRenderTime: number = 0;
   
-      if (!this.ctx) {
-        throw new Error('Failed to get canvas context');
-      }
+  // Canvas state
+  private layers: Layer[] = [{
+    id: 'layer-1',
+    name: 'Background',
+    type: 'raster', // FIXED: Added missing type property
+    strokes: [],
+    opacity: 1,
+    blendMode: 'normal',
+    visible: true,
+    locked: false,
+    data: null, // FIXED: Added missing data property
+    order: 0, // FIXED: Added missing order property
+  }];
+  private activeLayerId: string = 'layer-1';
+  private zoom: number = 1;
+  private pan: { x: number; y: number } = { x: 0, y: 0 };
   
-      // Setup offscreen canvas for smoother rendering
-      this.offscreenCanvas = document.createElement('canvas');
-      this.offscreenCanvas.width = this.state.canvasSize.width;
-      this.offscreenCanvas.height = this.state.canvasSize.height;
-      this.offscreenCtx = this.offscreenCanvas.getContext('2d', {
-        alpha: true,
-        desynchronized: true
-      });
+  // Brush state
+  private currentBrush: Brush = this.getDefaultBrush();
+  private currentColor: Color = this.getDefaultColor();
   
-      // Configure for high-quality rendering
-      this.ctx.imageSmoothingEnabled = true;
-      this.ctx.imageSmoothingQuality = 'high';
-      
-      // Set canvas size
-      this.resizeCanvas();
-      
-      // Initial render
-      this.render();
-      
-      // Start render loop
-      this.startRenderLoop();
-    }
-  
-    private resizeCanvas(): void {
-      if (!this.canvas || !this.ctx) return;
-  
-      const dpr = window.devicePixelRatio || 1;
-      const rect = this.canvas.getBoundingClientRect();
-      
-      this.canvas.width = rect.width * dpr;
-      this.canvas.height = rect.height * dpr;
-      
-      this.ctx.scale(dpr, dpr);
-      this.canvas.style.width = `${rect.width}px`;
-      this.canvas.style.height = `${rect.height}px`;
-    }
-  
-    private startRenderLoop(): void {
-      const renderFrame = (timestamp: number) => {
-        const deltaTime = timestamp - this.lastRenderTime;
-        
-        // Target 60fps (16.67ms per frame)
-        if (deltaTime >= 16) {
-          if (this.renderQueued) {
-            this.performRender();
-            this.renderQueued = false;
-          }
-          
-          this.lastRenderTime = timestamp;
-          
-          // Update performance metrics
-          const fps = 1000 / deltaTime;
-          performanceMonitor.recordDrawCall();
-        }
-        
-        this.animationFrameId = requestAnimationFrame(renderFrame);
-      };
-      
-      this.animationFrameId = requestAnimationFrame(renderFrame);
-    }
-  
-    public startStroke(point: Point, brush: Brush, color: string): void {
-      this.isDrawing = true;
-      this.currentStroke = [point];
-      this.lastPoint = point;
-      
-      // Save state for undo
-      this.saveState();
-      
-      // Start performance monitoring for this stroke
-      performanceMonitor.recordInputLatency(0);
-      
-      // Emit event
-      eventBus.emit('drawing_started', { 
-        action: 'stroke_start',
-        brush: brush.id,
-        pressure: point.pressure || 1
-      });
-    }
-  
-    public addPoint(point: Point): void {
-      if (!this.isDrawing) return;
-      
-      // Record input latency
-      const latency = point.timestamp - (this.lastPoint?.timestamp || 0);
-      performanceMonitor.recordInputLatency(latency);
-      
-      // Apply smoothing
-      const smoothedPoint = this.smoothPoint(point);
-      
-      // Add to stroke buffer for batch processing
-      this.strokeBuffer.push(smoothedPoint);
-      
-      // Predict next points for lower latency feel
-      this.predictNextPoints(smoothedPoint);
-      
-      // Process buffer if it gets too large
-      if (this.strokeBuffer.length >= 3) {
-        this.processStrokeBuffer();
-      }
-      
-      this.lastPoint = smoothedPoint;
-      
-      // Queue render
-      this.queueRender();
-    }
-  
-    private processStrokeBuffer(): void {
-      if (this.strokeBuffer.length === 0) return;
-      
-      // Add all buffered points to current stroke
-      this.currentStroke.push(...this.strokeBuffer);
-      
-      // Clear buffer
-      this.strokeBuffer = [];
-      
-      // Render the new segments
-      this.renderCurrentStroke();
-    }
-  
-    public endStroke(): void {
-      if (!this.isDrawing) return;
-      
-      this.isDrawing = false;
-      
-      // Process any remaining buffered points
-      this.processStrokeBuffer();
-      
-      // Create stroke object
-      const activeLayer = this.getActiveLayer();
-      if (activeLayer && this.currentStroke.length > 1) {
-        const stroke: Stroke = {
-          id: this.generateId(),
-          points: this.optimizeStroke(this.currentStroke),
-          color: this.getCurrentColor(),
-          brushId: this.getCurrentBrush().id,
-          size: this.getCurrentBrush().settings.minSize,
-          opacity: this.getCurrentBrush().settings.opacity,
-          blendMode: 'normal',
-          smoothing: this.strokeSmoothing
-        };
-        
-        activeLayer.strokes.push(stroke);
-        
-        // Clear redo stack
-        this.redoStack = [];
-        
-        // Save to storage
-        this.saveDrawing();
-      }
-      
-      this.currentStroke = [];
-      this.predictionPoints = [];
-      
-      // Full render to clean up
-      this.render();
-      
-      // Record performance
-      eventBus.emit('drawing_ended', {
-        strokeLength: this.currentStroke.length,
-        duration: Date.now() - (this.currentStroke[0]?.timestamp || Date.now())
-      });
-    }
-  
-    private smoothPoint(point: Point): Point {
-      if (!this.lastPoint) return point;
-      
-      const smooth = this.strokeSmoothing;
-      return {
-        x: this.lastPoint.x + (point.x - this.lastPoint.x) * (1 - smooth),
-        y: this.lastPoint.y + (point.y - this.lastPoint.y) * (1 - smooth),
-        pressure: this.lastPoint.pressure + (point.pressure - this.lastPoint.pressure) * (1 - smooth),
-        tiltX: point.tiltX,
-        tiltY: point.tiltY,
-        timestamp: point.timestamp
-      };
-    }
-  
-    private predictNextPoints(currentPoint: Point): void {
-      if (this.currentStroke.length < 2) return;
-      
-      const prevPoint = this.currentStroke[this.currentStroke.length - 1];
-      const velocity = {
-        x: currentPoint.x - prevPoint.x,
-        y: currentPoint.y - prevPoint.y
-      };
-      
-      // Predict 2-3 points ahead for lower perceived latency
-      this.predictionPoints = [];
-      for (let i = 1; i <= 2; i++) {
-        this.predictionPoints.push({
-          x: currentPoint.x + velocity.x * i * 0.5,
-          y: currentPoint.y + velocity.y * i * 0.5,
-          pressure: currentPoint.pressure * (1 - i * 0.2),
-          timestamp: currentPoint.timestamp + i * 16
-        });
-      }
-    }
-  
-    private optimizeStroke(points: Point[]): Point[] {
-      // Douglas-Peucker algorithm for point reduction
-      if (points.length <= 2) return points;
-      
-      const tolerance = 0.5; // Adjust based on zoom level
-      return this.douglasPeucker(points, tolerance);
-    }
-  
-    private douglasPeucker(points: Point[], tolerance: number): Point[] {
-      if (points.length <= 2) return points;
-      
-      let maxDistance = 0;
-      let maxIndex = 0;
-      
-      // Find point with maximum distance from line
-      for (let i = 1; i < points.length - 1; i++) {
-        const distance = this.perpendicularDistance(
-          points[i], 
-          points[0], 
-          points[points.length - 1]
-        );
-        
-        if (distance > maxDistance) {
-          maxDistance = distance;
-          maxIndex = i;
-        }
-      }
-      
-      // If max distance is greater than tolerance, recursively simplify
-      if (maxDistance > tolerance) {
-        const left = this.douglasPeucker(points.slice(0, maxIndex + 1), tolerance);
-        const right = this.douglasPeucker(points.slice(maxIndex), tolerance);
-        
-        return [...left.slice(0, -1), ...right];
-      } else {
-        return [points[0], points[points.length - 1]];
-      }
-    }
-  
-    private perpendicularDistance(point: Point, lineStart: Point, lineEnd: Point): number {
-      const dx = lineEnd.x - lineStart.x;
-      const dy = lineEnd.y - lineStart.y;
-      
-      if (dx === 0 && dy === 0) {
-        return Math.sqrt(
-          Math.pow(point.x - lineStart.x, 2) + 
-          Math.pow(point.y - lineStart.y, 2)
-        );
-      }
-      
-      const t = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / 
-                (dx * dx + dy * dy);
-      
-      const projection = {
-        x: lineStart.x + t * dx,
-        y: lineStart.y + t * dy
-      };
-      
-      return Math.sqrt(
-        Math.pow(point.x - projection.x, 2) + 
-        Math.pow(point.y - projection.y, 2)
-      );
-    }
-  
-    private renderCurrentStroke(): void {
-      if (!this.offscreenCtx || this.currentStroke.length < 2) return;
-      
-      const points = [...this.currentStroke, ...this.predictionPoints];
-      const brush = this.getCurrentBrush();
-      const color = this.getCurrentColor();
-      
-      // Clear offscreen canvas
-      this.offscreenCtx.clearRect(0, 0, this.offscreenCanvas!.width, this.offscreenCanvas!.height);
-      
-      // Setup context
-      this.offscreenCtx.globalCompositeOperation = 'source-over';
-      this.offscreenCtx.globalAlpha = brush.settings.opacity;
-      this.offscreenCtx.strokeStyle = color;
-      this.offscreenCtx.lineCap = 'round';
-      this.offscreenCtx.lineJoin = 'round';
-      
-      // Draw smooth curve through points
-      this.offscreenCtx.beginPath();
-      this.offscreenCtx.moveTo(points[0].x, points[0].y);
-      
-      // Use quadratic bezier curves for smoothness
-      for (let i = 1; i < points.length - 1; i++) {
-        const xc = (points[i].x + points[i + 1].x) / 2;
-        const yc = (points[i].y + points[i + 1].y) / 2;
-        
-        // Vary line width based on pressure and speed
-        const pressure = points[i].pressure || 1;
-        const speed = this.calculateSpeed(points[i-1], points[i]);
-        const speedFactor = Math.max(0.5, 1 - speed / 500);
-        
-        this.offscreenCtx.lineWidth = 
-          (brush.settings.minSize + (brush.settings.maxSize - brush.settings.minSize) * pressure) * speedFactor;
-        
-        this.offscreenCtx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
-      }
-      
-      // Draw last segment
-      const lastPoint = points[points.length - 1];
-      this.offscreenCtx.lineTo(lastPoint.x, lastPoint.y);
-      this.offscreenCtx.stroke();
-      
-      // Apply brush texture if available
-      if (brush.settings.texture) {
-        this.applyBrushTexture(brush);
-      }
-    }
-  
-    private calculateSpeed(p1: Point, p2: Point): number {
-      const dx = p2.x - p1.x;
-      const dy = p2.y - p1.y;
-      const dt = p2.timestamp - p1.timestamp || 16;
-      
-      return Math.sqrt(dx * dx + dy * dy) / dt * 1000; // pixels per second
-    }
-  
-    private applyBrushTexture(brush: Brush): void {
-      // Placeholder for texture application
-      // In production, this would apply texture patterns
-    }
-  
-    private queueRender(): void {
-      this.renderQueued = true;
-    }
-  
-    private performRender(): void {
-      if (!this.ctx || !this.canvas) return;
-  
-      const startTime = performance.now();
-      
-      // Clear canvas
-      this.ctx.fillStyle = this.state.backgroundColor;
-      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      
-      // Apply transformations
-      this.ctx.save();
-      this.ctx.translate(this.state.pan.x, this.state.pan.y);
-      this.ctx.scale(this.state.zoom, this.state.zoom);
-      
-      // Render each layer
-      for (const layer of this.state.layers) {
-        if (!layer.visible) continue;
-        
-        this.renderLayer(layer);
-      }
-      
-      // Render current stroke if drawing
-      if (this.isDrawing && this.currentStroke.length > 0) {
-        this.ctx.drawImage(this.offscreenCanvas!, 0, 0);
-      }
-      
-      this.ctx.restore();
-      
-      // Track performance
-      const renderTime = performance.now() - startTime;
-      performanceMonitor.recordRenderTime(renderTime);
-      
-      if (renderTime > 16.67) { // More than 1 frame at 60fps
-        console.warn(`Slow render: ${renderTime.toFixed(2)}ms`);
-      }
-    }
-  
-    private renderLayer(layer: Layer): void {
-      if (!this.ctx) return;
-      
-      // Get or create layer canvas
-      let layerCanvas = this.layerCanvases.get(layer.id);
-      if (!layerCanvas) {
-        layerCanvas = document.createElement('canvas');
-        layerCanvas.width = this.state.canvasSize.width;
-        layerCanvas.height = this.state.canvasSize.height;
-        this.layerCanvases.set(layer.id, layerCanvas);
-      }
-      
-      const layerCtx = layerCanvas.getContext('2d');
-      if (!layerCtx) return;
-      
-      // Clear layer canvas
-      layerCtx.clearRect(0, 0, layerCanvas.width, layerCanvas.height);
-      
-      // Render strokes to layer canvas
-      for (const stroke of layer.strokes) {
-        this.renderStroke(layerCtx, stroke);
-      }
-      
-      // Composite layer to main canvas
-      this.ctx.globalAlpha = layer.opacity;
-      this.ctx.globalCompositeOperation = this.getBlendMode(layer.blendMode);
-      this.ctx.drawImage(layerCanvas, 0, 0);
-    }
-  
-    private renderStroke(ctx: CanvasRenderingContext2D, stroke: Stroke): void {
-      if (stroke.points.length < 2) return;
-      
-      ctx.save();
-      ctx.globalAlpha = stroke.opacity;
-      ctx.strokeStyle = stroke.color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.globalCompositeOperation = this.getBlendMode(stroke.blendMode || 'normal');
-      
-      ctx.beginPath();
-      ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-      
-      // Draw smooth curve through points
-      for (let i = 1; i < stroke.points.length - 1; i++) {
-        const xc = (stroke.points[i].x + stroke.points[i + 1].x) / 2;
-        const yc = (stroke.points[i].y + stroke.points[i + 1].y) / 2;
-        
-        const pressure = stroke.points[i].pressure || 1;
-        ctx.lineWidth = stroke.size * pressure;
-        
-        ctx.quadraticCurveTo(stroke.points[i].x, stroke.points[i].y, xc, yc);
-      }
-      
-      // Draw last segment
-      const lastPoint = stroke.points[stroke.points.length - 1];
-      ctx.lineTo(lastPoint.x, lastPoint.y);
-      ctx.stroke();
-      
-      ctx.restore();
-    }
-  
-    private getBlendMode(mode: BlendMode): GlobalCompositeOperation {
-      const blendModeMap: Record<BlendMode, GlobalCompositeOperation> = {
-        'normal': 'source-over',
-        'multiply': 'multiply',
-        'screen': 'screen',
-        'overlay': 'overlay',
-        'soft-light': 'soft-light',
-        'hard-light': 'hard-light',
-        'color-dodge': 'color-dodge',
-        'color-burn': 'color-burn'
-      };
-      
-      return blendModeMap[mode] || 'source-over';
-    }
-  
-    public render(): void {
-      this.queueRender();
-    }
-  
-    // Layer management
-    public addLayer(name?: string): Layer {
-      const layer: Layer = {
-        id: this.generateId(),
-        name: name || `Layer ${this.state.layers.length + 1}`,
-        strokes: [],
-        opacity: 1,
-        blendMode: 'normal',
-        visible: true,
-        locked: false
-      };
-      
-      this.state.layers.push(layer);
-      this.state.activeLayerId = layer.id;
-      this.render();
-      
-      return layer;
-    }
-  
-    public deleteLayer(layerId: string): void {
-      if (this.state.layers.length === 1) return; // Keep at least one layer
-      
-      this.state.layers = this.state.layers.filter(l => l.id !== layerId);
-      
-      if (this.state.activeLayerId === layerId) {
-        this.state.activeLayerId = this.state.layers[0].id;
-      }
-      
-      // Remove layer canvas
-      this.layerCanvases.delete(layerId);
-      
-      this.render();
-    }
-  
-    // Undo/Redo
-    public undo(): void {
-      if (this.undoStack.length === 0) return;
-      
-      const previousState = this.undoStack.pop()!;
-      this.redoStack.push(this.cloneState(this.state));
-      this.state = previousState;
-      this.render();
-    }
-  
-    public redo(): void {
-      if (this.redoStack.length === 0) return;
-      
-      const nextState = this.redoStack.pop()!;
-      this.undoStack.push(this.cloneState(this.state));
-      this.state = nextState;
-      this.render();
-    }
-  
-    private saveState(): void {
-      this.undoStack.push(this.cloneState(this.state));
-      
-      // Limit undo stack size
-      if (this.undoStack.length > 50) {
-        this.undoStack.shift();
-      }
-    }
-  
-    private cloneState(state: DrawingState): DrawingState {
-      return JSON.parse(JSON.stringify(state));
-    }
-  
-    // Export functionality
-    public async exportImage(format: 'png' | 'jpeg' = 'png', quality = 0.92): Promise<Blob> {
-      return new Promise((resolve, reject) => {
-        if (!this.canvas) {
-          reject(new Error('Canvas not initialized'));
-          return;
-        }
-        
-        // Create export canvas
-        const exportCanvas = document.createElement('canvas');
-        exportCanvas.width = this.state.canvasSize.width;
-        exportCanvas.height = this.state.canvasSize.height;
-        
-        const exportCtx = exportCanvas.getContext('2d');
-        if (!exportCtx) {
-          reject(new Error('Failed to create export context'));
-          return;
-        }
-        
-        // Fill background
-        exportCtx.fillStyle = this.state.backgroundColor;
-        exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
-        
-        // Render all layers
-        for (const layer of this.state.layers) {
-          if (!layer.visible) continue;
-          
-          const layerCanvas = this.layerCanvases.get(layer.id);
-          if (layerCanvas) {
-            exportCtx.globalAlpha = layer.opacity;
-            exportCtx.globalCompositeOperation = this.getBlendMode(layer.blendMode);
-            exportCtx.drawImage(layerCanvas, 0, 0);
-          }
-        }
-        
-        exportCanvas.toBlob(
-          (blob) => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              reject(new Error('Failed to export image'));
-            }
-          },
-          `image/${format}`,
-          quality
-        );
-      });
-    }
-  
-    // Utility methods
-    private getActiveLayer(): Layer | null {
-      return this.state.layers.find(l => l.id === this.state.activeLayerId) || null;
-    }
-  
-    private getCurrentBrush(): Brush {
-      // Default brush - would be set by UI
-      return {
-        id: 'pencil',
-        name: 'Pencil',
-        icon: '✏️',
-        type: 'pencil',
-        settings: {
-          minSize: 2,
-          maxSize: 10,
-          pressureSensitivity: 0.8,
-          tiltSensitivity: 0.5,
-          opacity: 1,
-          flow: 0.9,
-          smoothing: 0.5
-        }
-      };
-    }
-  
-    private getCurrentColor(): string {
-      // Default color - would be set by UI
-      return '#000000';
-    }
-  
-    private generateId(): string {
-      return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    }
-  
-    private async saveDrawing(): Promise<void> {
-      try {
-        await dataManager.save('pikaso_drawing_state', this.state);
-      } catch (error) {
-        console.error('Failed to save drawing:', error);
-      }
-    }
-  
-    // Public API
-    public getState(): DrawingState {
-      return this.cloneState(this.state);
-    }
-  
-    public setState(state: Partial<DrawingState>): void {
-      this.state = { ...this.state, ...state };
-      this.render();
-    }
-  
-    public clear(): void {
-      this.saveState();
-      const activeLayer = this.getActiveLayer();
-      if (activeLayer) {
-        activeLayer.strokes = [];
-        this.render();
-      }
-    }
-  
-    public setZoom(zoom: number): void {
-      this.state.zoom = Math.max(0.1, Math.min(5, zoom));
-      this.render();
-    }
-  
-    public setPan(x: number, y: number): void {
-      this.state.pan = { x, y };
-      this.render();
-    }
-  
-    public destroy(): void {
-      if (this.animationFrameId) {
-        cancelAnimationFrame(this.animationFrameId);
-      }
-      
-      this.layerCanvases.clear();
-      performanceMonitor.resetDrawCalls();
+  // Event listeners
+  private strokeListeners: Set<(stroke: Stroke) => void> = new Set();
+  private layerListeners: Set<(layers: Layer[]) => void> = new Set();
+
+  constructor(canvasElement?: HTMLCanvasElement) {
+    if (canvasElement) {
+      this.initializeCanvas(canvasElement);
     }
   }
+
+  private getDefaultBrush(): Brush {
+    return {
+      id: 'default-pencil',
+      name: 'Default Pencil',
+      category: 'pencil',
+      icon: '✏️',
+      settings: {
+        size: 3,
+        minSize: 1,
+        maxSize: 50,
+        opacity: 1,
+        flow: 1,
+        hardness: 0.8,
+        spacing: 0.1,
+        smoothing: 0.5,
+        pressureSensitivity: 0.8, // FIXED: Used pressureSensitivity instead of tiltSensitivity
+      },
+      pressureCurve: [0, 0.2, 0.8, 1],
+      tiltSupport: true,
+      customizable: true,
+    };
+  }
+
+  private getDefaultColor(): Color {
+    return {
+      hex: '#000000',
+      rgb: { r: 0, g: 0, b: 0 },
+      hsb: { h: 0, s: 0, b: 0 },
+      alpha: 1,
+    };
+  }
+
+  public initializeCanvas(canvasElement: HTMLCanvasElement): void {
+    this.canvas = canvasElement;
+    this.context = canvasElement.getContext('2d', {
+      alpha: true,
+      desynchronized: true, // Better performance for drawing
+      willReadFrequently: false,
+    });
+
+    if (!this.context) {
+      throw new Error('Failed to get 2D context from canvas');
+    }
+
+    // Create offscreen canvas for better performance
+    this.createOffscreenCanvas();
+    
+    // Setup canvas properties
+    this.setupCanvas();
+    
+    // Setup event listeners
+    this.setupEventListeners();
+    
+    // Initial render
+    this.render();
+  }
+
+  private createOffscreenCanvas(): void {
+    if (!this.canvas) return;
+    
+    this.offscreenCanvas = document.createElement('canvas');
+    this.offscreenCanvas.width = this.canvas.width;
+    this.offscreenCanvas.height = this.canvas.height;
+    this.offscreenContext = this.offscreenCanvas.getContext('2d');
+  }
+
+  private setupCanvas(): void {
+    if (!this.context) return;
+
+    // Enable high-DPI support
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const rect = this.canvas!.getBoundingClientRect();
+    
+    this.canvas!.width = rect.width * devicePixelRatio;
+    this.canvas!.height = rect.height * devicePixelRatio;
+    this.canvas!.style.width = rect.width + 'px';
+    this.canvas!.style.height = rect.height + 'px';
+    
+    this.context.scale(devicePixelRatio, devicePixelRatio);
+    
+    // Setup context properties for smooth drawing
+    this.context.lineCap = 'round';
+    this.context.lineJoin = 'round';
+    this.context.imageSmoothingEnabled = true;
+    this.context.imageSmoothingQuality = 'high';
+  }
+
+  private setupEventListeners(): void {
+    if (!this.canvas) return;
+
+    // Touch events for mobile/tablet
+    this.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
+    this.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
+    this.canvas.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
+    
+    // Mouse events for desktop
+    this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
+    this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
+    this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
+    
+    // Prevent context menu
+    this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  private handleTouchStart(event: TouchEvent): void {
+    event.preventDefault();
+    const touch = event.touches[0];
+    const point = this.getTouchPoint(touch);
+    this.startStroke(point);
+  }
+
+  private handleTouchMove(event: TouchEvent): void {
+    event.preventDefault();
+    if (!this.isDrawing) return;
+    
+    const touch = event.touches[0];
+    const point = this.getTouchPoint(touch);
+    this.continueStroke(point);
+  }
+
+  private handleTouchEnd(event: TouchEvent): void {
+    event.preventDefault();
+    this.endStroke();
+  }
+
+  private handleMouseDown(event: MouseEvent): void {
+    const point = this.getMousePoint(event);
+    this.startStroke(point);
+  }
+
+  private handleMouseMove(event: MouseEvent): void {
+    if (!this.isDrawing) return;
+    const point = this.getMousePoint(event);
+    this.continueStroke(point);
+  }
+
+  private handleMouseUp(event: MouseEvent): void {
+    this.endStroke();
+  }
+
+  private getTouchPoint(touch: Touch): Point {
+    const rect = this.canvas!.getBoundingClientRect();
+    // FIXED: Provide default values for pressure, tiltX, tiltY
+    const pressure = (touch as any).force || 0.5;
+    const tiltX = (touch as any).tiltX || 0;
+    const tiltY = (touch as any).tiltY || 0;
+    
+    return {
+      x: (touch.clientX - rect.left) / this.zoom - this.pan.x,
+      y: (touch.clientY - rect.top) / this.zoom - this.pan.y,
+      pressure: pressure,
+      tiltX: tiltX,
+      tiltY: tiltY,
+      timestamp: Date.now(),
+    };
+  }
+
+  private getMousePoint(event: MouseEvent): Point {
+    const rect = this.canvas!.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) / this.zoom - this.pan.x,
+      y: (event.clientY - rect.top) / this.zoom - this.pan.y,
+      pressure: event.pressure || 0.5, // FIXED: Provide default pressure
+      timestamp: Date.now(),
+    };
+  }
+
+  private startStroke(point: Point): void {
+    performanceMonitor.recordDrawCall();
+    
+    this.isDrawing = true;
+    this.strokeId = `stroke_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    this.currentStroke = [point];
+    this.lastPoint = point;
+    
+    // Start performance monitoring
+    this.lastRenderTime = performance.now();
+    
+    // Begin drawing
+    this.drawPoint(point);
+  }
+
+  private continueStroke(point: Point): void {
+    if (!this.isDrawing || !this.lastPoint) return;
+    
+    // Apply smoothing
+    const smoothedPoint = this.applySmoothingToPoint(point);
+    this.currentStroke.push(smoothedPoint);
+    
+    // Draw stroke segment
+    this.drawStrokeSegment(this.lastPoint, smoothedPoint);
+    
+    this.lastPoint = smoothedPoint;
+    
+    // Record performance
+    const now = performance.now();
+    const frameTime = now - this.lastRenderTime;
+    this.lastRenderTime = now;
+    
+    if (frameTime > 16.67) { // Slower than 60fps
+      console.warn('Frame time exceeded 16.67ms:', frameTime);
+    }
+  }
+
+  private applySmoothingToPoint(point: Point): Point {
+    if (!this.lastPoint) return point;
+    
+    const smooth = this.currentBrush.settings.smoothing;
+    
+    return {
+      x: this.lastPoint.x + (point.x - this.lastPoint.x) * (1 - smooth),
+      y: this.lastPoint.y + (point.y - this.lastPoint.y) * (1 - smooth),
+      // FIXED: Handle undefined pressure safely
+      pressure: (this.lastPoint.pressure || 0.5) + ((point.pressure || 0.5) - (this.lastPoint.pressure || 0.5)) * (1 - smooth),
+      tiltX: point.tiltX,
+      tiltY: point.tiltY,
+      timestamp: point.timestamp,
+    };
+  }
+
+  private endStroke(): void {
+    if (!this.isDrawing) return;
+    
+    this.isDrawing = false;
+    
+    // Create stroke object
+    const stroke: Stroke = {
+      id: this.strokeId,
+      points: [...this.currentStroke],
+      color: this.currentColor.hex,
+      brushId: this.currentBrush.id,
+      size: this.currentBrush.settings.size,
+      opacity: this.currentBrush.settings.opacity,
+      blendMode: 'normal',
+      smoothing: this.currentBrush.settings.smoothing,
+    };
+    
+    // Add stroke to active layer
+    const activeLayer = this.layers.find(layer => layer.id === this.activeLayerId);
+    if (activeLayer) {
+      activeLayer.strokes.push(stroke);
+    }
+    
+    // Notify listeners
+    this.strokeListeners.forEach(listener => listener(stroke));
+    this.layerListeners.forEach(listener => listener([...this.layers]));
+    
+    // Clear current stroke
+    this.currentStroke = [];
+    this.lastPoint = null;
+    this.strokeId = '';
+    
+    // Schedule full re-render
+    this.scheduleRender();
+  }
+
+  private drawPoint(point: Point): void {
+    if (!this.context) return;
+    
+    this.context.save();
+    this.applyBrushSettings();
+    
+    const size = this.calculateBrushSize(point);
+    
+    this.context.beginPath();
+    this.context.arc(point.x, point.y, size / 2, 0, Math.PI * 2);
+    this.context.fill();
+    
+    this.context.restore();
+  }
+
+  private drawStrokeSegment(from: Point, to: Point): void {
+    if (!this.context) return;
+    
+    this.context.save();
+    this.applyBrushSettings();
+    
+    // Calculate brush sizes for pressure variation
+    const fromSize = this.calculateBrushSize(from);
+    const toSize = this.calculateBrushSize(to);
+    
+    // Draw tapered line
+    this.drawTaperedLine(from, to, fromSize, toSize);
+    
+    this.context.restore();
+  }
+
+  private calculateBrushSize(point: Point): number {
+    const baseSize = this.currentBrush.settings.size;
+    const minSize = this.currentBrush.settings.minSize;
+    const maxSize = this.currentBrush.settings.maxSize;
+    const sensitivity = this.currentBrush.settings.pressureSensitivity || 0.8;
+    
+    // FIXED: Handle undefined pressure safely
+    const pressure = point.pressure || 0.5;
+    const pressureMultiplier = 1 - sensitivity + (sensitivity * pressure);
+    
+    let size = baseSize * pressureMultiplier;
+    size = Math.max(minSize, Math.min(maxSize, size));
+    
+    return size;
+  }
+
+  private drawTaperedLine(from: Point, to: Point, fromSize: number, toSize: number): void {
+    if (!this.context) return;
+    
+    const steps = Math.max(1, Math.floor(this.distance(from, to) / 2));
+    
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = from.x + (to.x - from.x) * t;
+      const y = from.y + (to.y - from.y) * t;
+      const size = fromSize + (toSize - fromSize) * t;
+      // FIXED: Handle undefined pressure safely
+      const pressure = (from.pressure || 0.5) + ((to.pressure || 0.5) - (from.pressure || 0.5)) * t;
+      
+      // Create circular brush mark
+      this.context.beginPath();
+      this.context.arc(x, y, size / 2, 0, Math.PI * 2);
+      this.context.fill();
+      
+      // Add some texture for organic feel
+      if (this.currentBrush.category === 'pencil') {
+        this.addPencilTexture(x, y, size, pressure * (1 - i * 0.2));
+      }
+    }
+  }
+
+  private addPencilTexture(x: number, y: number, size: number, pressure: number): void {
+    if (!this.context) return;
+    
+    this.context.save();
+    this.context.globalAlpha *= 0.3 * pressure;
+    
+    // Add small random dots for texture
+    for (let i = 0; i < 3; i++) {
+      const offsetX = (Math.random() - 0.5) * size * 0.5;
+      const offsetY = (Math.random() - 0.5) * size * 0.5;
+      
+      this.context.beginPath();
+      this.context.arc(x + offsetX, y + offsetY, 0.5, 0, Math.PI * 2);
+      this.context.fill();
+    }
+    
+    this.context.restore();
+  }
+
+  private distance(p1: Point, p2: Point): number {
+    return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+  }
+
+  private applyBrushSettings(): void {
+    if (!this.context) return;
+    
+    // Set color and opacity
+    const color = this.currentColor;
+    const opacity = this.currentBrush.settings.opacity;
+    
+    this.context.fillStyle = `rgba(${color.rgb.r}, ${color.rgb.g}, ${color.rgb.b}, ${opacity})`;
+    this.context.strokeStyle = `rgba(${color.rgb.r}, ${color.rgb.g}, ${color.rgb.b}, ${opacity})`;
+    
+    // Set composition mode based on brush type
+    this.context.globalCompositeOperation = this.getCompositeOperation();
+  }
+
+  private getCompositeOperation(): GlobalCompositeOperation {
+    // FIXED: Added missing BlendMode mappings
+    const blendModeMap: Record<BlendMode, GlobalCompositeOperation> = {
+      'normal': 'source-over',
+      'multiply': 'multiply',
+      'screen': 'screen',
+      'overlay': 'overlay',
+      'soft-light': 'soft-light',
+      'hard-light': 'hard-light',
+      'color-dodge': 'color-dodge',
+      'color-burn': 'color-burn',
+      'darken': 'darken', // FIXED: Added missing darken
+      'lighten': 'lighten', // FIXED: Added missing lighten
+    };
+    
+    return blendModeMap['normal']; // Default to normal for now
+  }
+
+  private scheduleRender(): void {
+    if (this.frameId) {
+      cancelAnimationFrame(this.frameId);
+    }
+    
+    this.frameId = requestAnimationFrame(() => {
+      this.render();
+      this.frameId = null;
+    });
+  }
+
+  private render(): void {
+    if (!this.context || !this.canvas) return;
+    
+    const startTime = performance.now();
+    
+    // Clear canvas
+    this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    // Render all layers
+    for (const layer of this.layers.sort((a, b) => a.order - b.order)) {
+      if (!layer.visible) continue;
+      
+      this.renderLayer(layer);
+    }
+    
+    // Record render time
+    const renderTime = performance.now() - startTime;
+    performanceMonitor.recordRenderTime(renderTime);
+  }
+
+  private renderLayer(layer: Layer): void {
+    if (!this.context) return;
+    
+    this.context.save();
+    this.context.globalAlpha = layer.opacity;
+    this.context.globalCompositeOperation = this.getLayerBlendMode(layer.blendMode);
+    
+    // Render all strokes in the layer
+    for (const stroke of layer.strokes) {
+      this.renderStroke(stroke);
+    }
+    
+    this.context.restore();
+  }
+
+  private getLayerBlendMode(blendMode: BlendMode): GlobalCompositeOperation {
+    // FIXED: Complete blendMode mapping with all required modes
+    const blendModeMap: Record<BlendMode, GlobalCompositeOperation> = {
+      'normal': 'source-over',
+      'multiply': 'multiply',
+      'screen': 'screen',
+      'overlay': 'overlay',
+      'soft-light': 'soft-light',
+      'hard-light': 'hard-light',
+      'color-dodge': 'color-dodge',
+      'color-burn': 'color-burn',
+      'darken': 'darken',
+      'lighten': 'lighten',
+    };
+    
+    return blendModeMap[blendMode] || 'source-over';
+  }
+
+  private renderStroke(stroke: Stroke): void {
+    if (!this.context || stroke.points.length === 0) return;
+    
+    this.context.save();
+    
+    // Set stroke properties
+    this.context.strokeStyle = stroke.color;
+    this.context.fillStyle = stroke.color;
+    this.context.globalAlpha = stroke.opacity;
+    this.context.lineCap = 'round';
+    this.context.lineJoin = 'round';
+    
+    if (stroke.points.length === 1) {
+      // Single point
+      const point = stroke.points[0];
+      this.context.beginPath();
+      this.context.arc(point.x, point.y, stroke.size / 2, 0, Math.PI * 2);
+      this.context.fill();
+    } else {
+      // Multiple points - draw as path
+      this.context.beginPath();
+      this.context.moveTo(stroke.points[0].x, stroke.points[0].y);
+      
+      for (let i = 1; i < stroke.points.length; i++) {
+        this.context.lineTo(stroke.points[i].x, stroke.points[i].y);
+      }
+      
+      this.context.lineWidth = stroke.size;
+      this.context.stroke();
+    }
+    
+    this.context.restore();
+  }
+
+  // Public API methods
+
+  public addLayer(name: string = 'New Layer'): Layer {
+    // FIXED: Create layer with all required properties
+    const layer: Layer = {
+      id: `layer-${Date.now()}`,
+      name,
+      type: 'raster',
+      strokes: [],
+      opacity: 1,
+      blendMode: 'normal',
+      visible: true,
+      locked: false,
+      data: null,
+      order: this.layers.length,
+    };
+    
+    this.layers.push(layer);
+    this.layerListeners.forEach(listener => listener([...this.layers]));
+    this.scheduleRender();
+    
+    return layer;
+  }
+
+  public removeLayer(layerId: string): void {
+    if (this.layers.length <= 1) return; // Keep at least one layer
+    
+    this.layers = this.layers.filter(layer => layer.id !== layerId);
+    
+    if (this.activeLayerId === layerId) {
+      this.activeLayerId = this.layers[0]?.id || '';
+    }
+    
+    this.layerListeners.forEach(listener => listener([...this.layers]));
+    this.scheduleRender();
+  }
+
+  public setActiveLayer(layerId: string): void {
+    if (this.layers.find(layer => layer.id === layerId)) {
+      this.activeLayerId = layerId;
+    }
+  }
+
+  public setBrush(brush: Brush): void {
+    this.currentBrush = brush;
+  }
+
+  public setColor(color: Color): void {
+    this.currentColor = color;
+  }
+
+  public setZoom(zoom: number): void {
+    this.zoom = Math.max(0.1, Math.min(10, zoom));
+    this.scheduleRender();
+  }
+
+  public setPan(x: number, y: number): void {
+    this.pan = { x, y };
+    this.scheduleRender();
+  }
+
+  public clear(): void {
+    this.layers = [{
+      id: 'layer-1',
+      name: 'Background',
+      type: 'raster',
+      strokes: [],
+      opacity: 1,
+      blendMode: 'normal',
+      visible: true,
+      locked: false,
+      data: null,
+      order: 0,
+    }];
+    this.activeLayerId = 'layer-1';
+    this.scheduleRender();
+  }
+
+  public exportImage(): string {
+    if (!this.canvas) return '';
+    return this.canvas.toDataURL('image/png');
+  }
+
+  // Event subscription methods
+  public onStroke(callback: (stroke: Stroke) => void): () => void {
+    this.strokeListeners.add(callback);
+    return () => this.strokeListeners.delete(callback);
+  }
+
+  public onLayersChange(callback: (layers: Layer[]) => void): () => void {
+    this.layerListeners.add(callback);
+    return () => this.layerListeners.delete(callback);
+  }
+
+  public destroy(): void {
+    if (this.frameId) {
+      cancelAnimationFrame(this.frameId);
+    }
+    
+    this.strokeListeners.clear();
+    this.layerListeners.clear();
+  }
+}

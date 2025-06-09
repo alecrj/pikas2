@@ -234,7 +234,8 @@ export class ProgressionSystem {
     return unlockedAchievements;
   }
 
-  private async unlockAchievement(achievement: Achievement): Promise<void> {
+  // FIXED: Made unlockAchievement public and accepting Achievement parameter
+  public async unlockAchievement(achievement: Achievement): Promise<void> {
     const user = profileSystem.getCurrentUser();
     if (!user) return;
 
@@ -261,6 +262,19 @@ export class ProgressionSystem {
       achievement,
       xpAwarded: achievement.xpReward,
     });
+  }
+
+  // FIXED: Added missing getAchievement method
+  public getAchievement(achievementId: string): Achievement | null {
+    const user = profileSystem.getCurrentUser();
+    if (!user) return null;
+
+    return user.achievements.find(a => a.id === achievementId) || null;
+  }
+
+  // FIXED: Added getAchievementDefinition method for completeness
+  public getAchievementDefinition(achievementId: string): AchievementDefinition | null {
+    return this.achievementDefinitions.get(achievementId) || null;
   }
 
   private async updateAchievementProgress(achievementId: string, progress: number): Promise<void> {

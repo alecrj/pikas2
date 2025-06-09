@@ -12,6 +12,8 @@ export class PerformanceMonitor {
   private lastFPSUpdate: number = 0;
   private observers: Set<(metrics: PerformanceMetrics) => void> = new Set();
   private rafId: number | null = null;
+  private isInitialized: boolean = false;
+  
   private performanceThresholds = {
     targetFPS: 60,
     minAcceptableFPS: 30,
@@ -30,7 +32,6 @@ export class PerformanceMonitor {
       inputLatency: 0,
       renderTime: 0,
     };
-    this.startMonitoring();
   }
 
   public static getInstance(): PerformanceMonitor {
@@ -40,7 +41,28 @@ export class PerformanceMonitor {
     return PerformanceMonitor.instance;
   }
 
-  private startMonitoring(): void {
+  // FIXED: Added missing initialize method
+  public initialize(): void {
+    if (this.isInitialized) {
+      return;
+    }
+    
+    this.startMonitoring();
+    this.isInitialized = true;
+    console.log('PerformanceMonitor initialized');
+  }
+
+  // FIXED: Made startMonitoring public and renamed internal method
+  public startMonitoring(): void {
+    if (this.rafId) {
+      // Already monitoring
+      return;
+    }
+
+    this.beginMonitoringLoop();
+  }
+
+  private beginMonitoringLoop(): void {
     const monitor = () => {
       const now = performance.now();
       
@@ -182,6 +204,7 @@ export class PerformanceMonitor {
       this.rafId = null;
     }
     this.observers.clear();
+    this.isInitialized = false;
   }
 
   // Performance optimization utilities

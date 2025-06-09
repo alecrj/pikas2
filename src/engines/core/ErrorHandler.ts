@@ -12,10 +12,10 @@ export class ErrorHandler {
   private errorHandlers: Map<string, (error: AppError) => void> = new Map();
   private isOnline: boolean = true;
   private userId?: string;
+  private isInitialized: boolean = false;
 
   private constructor() {
-    this.setupGlobalErrorHandlers();
-    this.setupNetworkListener();
+    // Don't setup handlers in constructor - wait for initialize()
   }
 
   public static getInstance(): ErrorHandler {
@@ -23,6 +23,18 @@ export class ErrorHandler {
       ErrorHandler.instance = new ErrorHandler();
     }
     return ErrorHandler.instance;
+  }
+
+  // FIXED: Added missing initialize method
+  public initialize(): void {
+    if (this.isInitialized) {
+      return;
+    }
+
+    this.setupGlobalErrorHandlers();
+    this.setupNetworkListener();
+    this.isInitialized = true;
+    console.log('ErrorHandler initialized');
   }
 
   private setupGlobalErrorHandlers(): void {

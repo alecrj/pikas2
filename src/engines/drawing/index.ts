@@ -1,27 +1,14 @@
-// Drawing engine exports
+// src/engines/drawing/index.ts
 export { ProfessionalCanvas } from './ProfessionalCanvas';
+export { BrushEngine } from './BrushEngine';
+export { PerformanceOptimizer } from './PerformanceOptimizer';
 
-// FIXED: Create placeholder exports for missing classes until they're implemented
-export class BrushEngine {
-  constructor() {
-    // Placeholder implementation
-  }
-  
-  initialize() {
-    console.log('BrushEngine initialized');
+export async function initializeDrawingEngine(): Promise<void> {
+  try {
+    // Drawing engine doesn't need explicit initialization
+    console.log('Drawing engine initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize drawing engine:', error);
+    throw error;
   }
 }
-
-export class PerformanceOptimizer {
-  constructor() {
-    // Placeholder implementation
-  }
-  
-  initialize() {
-    console.log('PerformanceOptimizer initialized');
-  }
-}
-
-// Export instances
-export const brushEngine = new BrushEngine();
-export const performanceOptimizer = new PerformanceOptimizer();
