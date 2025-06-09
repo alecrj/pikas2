@@ -53,7 +53,7 @@ interface UserProgressContextValue {
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
   addXP: (amount: number) => Promise<void>;
-  addAchievement: (achievementId: string) => Promise<void>; // FIXED: Added missing method
+  addAchievement: (achievementId: string) => Promise<void>;
   unlockAchievement: (achievementId: string) => Promise<void>;
   updateDailyProgress: (xp: number) => Promise<void>;
   checkDailyStreak: () => Promise<void>;
@@ -117,7 +117,6 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
     try {
       setIsLoading(true);
       const currentUser = profileSystem.getCurrentUser();
-      
       if (currentUser) {
         setUser(currentUser);
         await loadUserData();
@@ -174,7 +173,6 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      
       // In production, this would authenticate with backend
       // For MVP, we'll create/load a local user
       const existingUser = profileSystem.getCurrentUser();
@@ -188,7 +186,6 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
         );
         setUser(newUser);
       }
-      
       await loadUserData();
     } catch (error) {
       errorHandler.handleError(
@@ -229,7 +226,6 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
   const addXP = async (amount: number) => {
     try {
       const result = await profileSystem.addXP(amount);
-      
       if (result.leveledUp) {
         // Celebrate level up
         if (typeof window !== 'undefined' && (window as any).celebrateLevelUp) {
@@ -246,30 +242,25 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   };
 
-  // FIXED: Added missing addAchievement method
+  // FIXED: Correct achievement method as per instructions
   const addAchievement = async (achievementId: string) => {
-    try {
-      await progressionSystem.unlockAchievement(achievementId);
-      const achievement = progressionSystem.getAchievement(achievementId);
-      
-      if (achievement) {
-        setRecentAchievements(prev => [achievement, ...prev].slice(0, 5));
-        await loadAchievements();
-        
-        // Trigger achievement notification
-        if (typeof window !== 'undefined' && (window as any).showAchievementUnlocked) {
-          (window as any).showAchievementUnlocked(achievement);
-        }
+    if (!user) return;
+    // Try to find achievement by ID
+    const achievement = user.achievements.find(a => a.id === achievementId);
+    if (achievement && !achievement.unlockedAt) {
+      achievement.unlockedAt = new Date();
+      await progressionSystem.unlockAchievement(achievement);
+      setUser({ ...user });
+      setRecentAchievements(prev => [achievement, ...prev].slice(0, 5));
+      await loadAchievements();
+      // Achievement notification (optional)
+      if (typeof window !== 'undefined' && (window as any).showAchievementUnlocked) {
+        (window as any).showAchievementUnlocked(achievement);
       }
-    } catch (error) {
-      errorHandler.handleError(
-        errorHandler.createError('ACHIEVEMENT_ADD_ERROR', 'Failed to add achievement', 'medium', error)
-      );
     }
   };
 
   const unlockAchievement = async (achievementId: string) => {
-    // Delegate to addAchievement for consistency
     await addAchievement(achievementId);
   };
 

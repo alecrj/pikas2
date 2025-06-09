@@ -782,8 +782,8 @@ export class SkillTreeManager {
         description: template.description,
         thumbnailUrl: `${template.id}_thumb`,
         duration: 12 + (index * 2), // Progressive difficulty
-        difficulty: Math.min(5, Math.floor(index / 3) + 2),
-        order: index + 6,
+        difficulty: Math.min(5, Math.floor(index / 3) + 2) as 1 | 2 | 3 | 4 | 5,
+                order: index + 6,
         prerequisites: index > 0 ? [lessonTemplates[index - 1].id] : ['lesson_5_form_volume'],
         objectives: [
           { id: `obj_${index + 6}_1`, description: `Master ${template.title.toLowerCase()}`, completed: false },
@@ -1039,6 +1039,71 @@ export class SkillTreeManager {
       skillTreesInProgress: this.userProgress.skillTrees.length,
       nextLessonRecommendation: nextLesson,
     };
+  }
+  // Add these methods to the SkillTreeManager class:
+
+  public getAvailableSkillTrees(): SkillTree[] {
+    return this.getAllSkillTrees();
+  }
+
+  public getRecommendedNextLesson(): Lesson | null {
+    const availableLessons = this.getAvailableLessons();
+    const uncompletedLessons = availableLessons.filter(
+      lesson => !this.userProgress?.completedLessons.includes(lesson.id)
+    );
+    return uncompletedLessons[0] || null;
+  }
+
+  public getAvailableLessons(treeId?: string): Lesson[] {
+    if (!this.userProgress) return [];
+
+    const available: Lesson[] = [];
+    const trees = treeId 
+      ? [this.skillTrees.get(treeId)].filter(Boolean)
+      : Array.from(this.skillTrees.values());
+    
+    for (const tree of trees) {
+      if (!tree) continue;
+      for (const lesson of tree.lessons) {
+        if (this.isLessonUnlocked(lesson)) {
+          available.push(lesson);
+        }
+      }
+    }
+
+    return available.sort((a, b) => a.order - b.order);
+  }
+
+  public getOverallProgress(): {
+    totalLessonsCompleted: number;
+    totalXpEarned: number;
+    completionPercentage: number;
+  } {
+    const progress = this.getProgressSummary();
+    return {
+      totalLessonsCompleted: progress.completedLessons,
+      totalXpEarned: progress.totalXP,
+      completionPercentage: progress.totalLessons > 0 
+        ? Math.round((progress.completedLessons / progress.totalLessons) * 100)
+        : 0,
+    };
+  }
+
+  public getAllLessons(): Lesson[] {
+    const allLessons: Lesson[] = [];
+    for (const tree of this.skillTrees.values()) {
+      allLessons.push(...tree.lessons);
+    }
+    return allLessons;
+  }
+
+  public getUnlockedLessons(): Lesson[] {
+    return this.getAvailableLessons();
+  }
+
+  public checkUnlockRequirements(lessonId: string): boolean {
+    const lesson = this.getLesson(lessonId);
+    return lesson ? this.isLessonUnlocked(lesson) : false;
   }
 }
 

@@ -50,7 +50,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 export default function DrawScreen() {
   const theme = useTheme();
   const { state: drawingState, dispatch: drawingDispatch } = useDrawing();
-  const { addXP, addAchievement } = useUserProgress(); // FIXED: Changed from unlockAchievement to addAchievement
+  const { addXP, addAchievement } = useUserProgress();
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const professionalCanvas = useRef<ProfessionalCanvas | null>(null);
@@ -68,43 +68,27 @@ export default function DrawScreen() {
 
   useEffect(() => {
     if (canvasRef.current && !professionalCanvas.current) {
-      professionalCanvas.current = new ProfessionalCanvas({
-        canvas: {
-          width: screenWidth,
-          height: screenHeight * 0.7,
-          zoom: 1,
-          rotation: 0,
-          offset: { x: 0, y: 0 },
-          isDrawing: false,
-          pressure: 1,
-          tilt: { x: 0, y: 0 },
-        },
-        backgroundColor: theme.colors.surface,
-      });
+      professionalCanvas.current = new ProfessionalCanvas();
       professionalCanvas.current.initialize(canvasRef.current);
     }
-    
     return () => {
       professionalCanvas.current?.destroy();
     };
   }, []);
+  
 
   const handleTouchStart = (event: any) => {
     const { locationX, locationY, pressure = 1, tiltX = 0, tiltY = 0 } = event.nativeEvent;
-    
     if (professionalCanvas.current) {
-      professionalCanvas.current.startStroke(
-        {
-          x: locationX,
-          y: locationY,
-          pressure,
-          tiltX,
-          tiltY,
-          timestamp: Date.now(),
-        },
-        drawingState.currentBrush,
-        drawingState.currentColor
-      );
+      // FIXED: startStroke only gets the event object (no brush/color as extra arguments)
+      professionalCanvas.current.startStroke({
+        x: locationX,
+        y: locationY,
+        pressure,
+        tiltX,
+        tiltY,
+        timestamp: Date.now(),
+      });
       setIsDrawing(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -112,9 +96,7 @@ export default function DrawScreen() {
 
   const handleTouchMove = (event: any) => {
     if (!isDrawing) return;
-    
     const { locationX, locationY, pressure = 1, tiltX = 0, tiltY = 0 } = event.nativeEvent;
-    
     if (professionalCanvas.current) {
       professionalCanvas.current.addPoint({
         x: locationX,
@@ -131,8 +113,6 @@ export default function DrawScreen() {
     if (professionalCanvas.current && isDrawing) {
       professionalCanvas.current.endStroke();
       setIsDrawing(false);
-      
-      // Track drawing activity
       addXP(1);
       checkDrawingAchievements();
     }
@@ -141,14 +121,12 @@ export default function DrawScreen() {
   const checkDrawingAchievements = () => {
     const state = professionalCanvas.current?.getState();
     if (!state) return;
-    
-    const totalStrokes = state.layers.reduce((sum, layer) => sum + (layer.strokes?.length || 0), 0);
-    
+    const totalStrokes = state.layers.reduce((sum: number, layer: any) => sum + (layer.strokes?.length || 0), 0);
     if (totalStrokes === 1) {
-      addAchievement('first_stroke'); // FIXED: Using addAchievement
+      addAchievement('first_stroke');
     }
     if (totalStrokes === 100) {
-      addAchievement('hundred_strokes'); // FIXED: Using addAchievement
+      addAchievement('hundred_strokes');
     }
   };
 
@@ -182,29 +160,28 @@ export default function DrawScreen() {
 
   const handleExport = async () => {
     try {
-      const blob = await professionalCanvas.current?.exportImage('png');
+      // FIXED: exportImage() expects 0 arguments
+      const blob = await professionalCanvas.current?.exportImage();
       if (!blob) return;
-      
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.readAsDataURL(blob);
-      reader.onloadend = async () => {
-        const base64 = reader.result as string;
-        
-        // Request permissions
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission needed', 'Please grant permission to save images.');
-          return;
-        }
-        
-        // Save to gallery
-        const asset = await MediaLibrary.createAssetAsync(base64);
-        await MediaLibrary.createAlbumAsync('Pikaso', asset, false);
-        
-        Alert.alert('Success', 'Artwork saved to gallery!');
-        addAchievement('first_export'); // FIXED: Using addAchievement
-      };
+      // Only run FileReader if it's a Blob
+      if (blob instanceof Blob) {
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = async () => {
+          const base64 = reader.result as string;
+          const { status } = await MediaLibrary.requestPermissionsAsync();
+          if (status !== 'granted') {
+            Alert.alert('Permission needed', 'Please grant permission to save images.');
+            return;
+          }
+          const asset = await MediaLibrary.createAssetAsync(base64);
+          await MediaLibrary.createAlbumAsync('Pikaso', asset, false);
+          Alert.alert('Success', 'Artwork saved to gallery!');
+          addAchievement('first_export');
+        };
+      } else {
+        Alert.alert('Export error', 'Unknown image export type');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to export artwork');
     }
@@ -212,16 +189,20 @@ export default function DrawScreen() {
 
   const handleShare = async () => {
     try {
-      const blob = await professionalCanvas.current?.exportImage('png');
+      // FIXED: exportImage() expects 0 arguments
+      const blob = await professionalCanvas.current?.exportImage();
       if (!blob) return;
-      
-      const url = URL.createObjectURL(blob);
-      await Sharing.shareAsync(url, {
-        mimeType: 'image/png',
-        dialogTitle: 'Share your artwork',
-      });
-      
-      addAchievement('first_share'); // FIXED: Using addAchievement
+      if (blob instanceof Blob) {
+        // FIXED: Pass Blob, not string, to createObjectURL
+        const url = URL.createObjectURL(blob);
+        await Sharing.shareAsync(url, {
+          mimeType: 'image/png',
+          dialogTitle: 'Share your artwork',
+        });
+        addAchievement('first_share');
+      } else {
+        Alert.alert('Share error', 'Unknown image export type');
+      }
     } catch (error) {
       Alert.alert('Error', 'Failed to share artwork');
     }
@@ -241,7 +222,7 @@ export default function DrawScreen() {
         <View style={styles.brushPickerContainer}>
           <Text style={styles.pickerTitle}>Choose Brush</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {drawingState.availableBrushes.map((brush) => (
+            {(drawingState.availableBrushes || []).map((brush: Brush) => (
               <Pressable
                 key={brush.id}
                 style={[
@@ -260,11 +241,9 @@ export default function DrawScreen() {
             ))}
           </ScrollView>
           <View style={styles.brushSettings}>
-            {/* FIXED: Removed .current access since size is now a number */}
             <Text style={styles.settingLabel}>
               Size: {drawingState.currentBrush.settings.size}px
             </Text>
-            {/* FIXED: Removed .current access and proper number handling */}
             <Text style={styles.settingLabel}>
               Opacity: {Math.round(drawingState.currentBrush.settings.opacity * 100)}%
             </Text>
@@ -288,13 +267,13 @@ export default function DrawScreen() {
         <View style={styles.colorPickerContainer}>
           <Text style={styles.pickerTitle}>Choose Color</Text>
           <View style={styles.colorGrid}>
-            {drawingState.colorPalette.map((color) => (
+            {(drawingState.colorPalette || []).map((color: string) => (
               <Pressable
                 key={color}
                 style={[
                   styles.colorOption,
                   { backgroundColor: color },
-                  drawingState.currentColor === color && styles.selectedColor
+                  drawingState.currentColor.hex === color && styles.selectedColor
                 ]}
                 onPress={() => {
                   drawingDispatch({ type: 'SET_COLOR', color });
@@ -307,7 +286,7 @@ export default function DrawScreen() {
           <View style={styles.recentColors}>
             <Text style={styles.recentLabel}>Recent:</Text>
             <ScrollView horizontal>
-              {drawingState.recentColors.map((color, index) => (
+              {(drawingState.recentColors || []).map((color: string, index: number) => (
                 <Pressable
                   key={`recent-${index}`}
                   style={[styles.recentColor, { backgroundColor: color }]}
@@ -353,7 +332,7 @@ export default function DrawScreen() {
               </Pressable>
             </View>
             <ScrollView>
-              {state.layers.map((layer, index) => (
+              {state.layers.map((layer: Layer, index: number) => (
                 <View
                   key={layer.id}
                   style={[
@@ -417,7 +396,6 @@ export default function DrawScreen() {
           onTouchEnd={handleTouchEnd}
         />
       </View>
-
       {/* Top Toolbar */}
       <View style={styles.topToolbar}>
         <Pressable style={styles.toolButton} onPress={handleUndo}>
@@ -441,17 +419,16 @@ export default function DrawScreen() {
           <Share2 size={24} color={theme.colors.text} />
         </Pressable>
       </View>
-
       {/* Bottom Toolbar */}
       <View style={styles.bottomToolbar}>
         <Pressable
-          style={[styles.brushButton, { backgroundColor: drawingState.currentColor }]}
+          style={[styles.brushButton, { backgroundColor: drawingState.currentColor.hex }]}
           onPress={() => setShowBrushPicker(true)}
         >
           <BrushIcon size={24} color={theme.colors.surface} />
         </Pressable>
         <Pressable
-          style={[styles.colorButton, { backgroundColor: drawingState.currentColor }]}
+          style={[styles.colorButton, { backgroundColor: drawingState.currentColor.hex }]}
           onPress={() => setShowColorPicker(true)}
         >
           <View style={styles.colorIndicator} />
@@ -459,12 +436,10 @@ export default function DrawScreen() {
         <View style={styles.brushInfo}>
           <Text style={styles.brushInfoText}>{drawingState.currentBrush.name}</Text>
           <Text style={styles.brushInfoSubtext}>
-            {/* FIXED: Removed .current access since size is now a number */}
             {drawingState.currentBrush.settings.size}px
           </Text>
         </View>
       </View>
-
       {/* Modals */}
       {renderBrushPicker()}
       {renderColorPicker()}
@@ -474,6 +449,7 @@ export default function DrawScreen() {
 }
 
 const createStyles = (theme: any) => StyleSheet.create({
+  // ...[styles unchanged, paste yours here]...
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
