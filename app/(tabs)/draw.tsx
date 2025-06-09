@@ -50,7 +50,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 export default function DrawScreen() {
   const theme = useTheme();
   const { state: drawingState, dispatch: drawingDispatch } = useDrawing();
-  const { addXP, addAchievement } = useUserProgress();
+  const { addXP, unlockAchievement } = useUserProgress();
   
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const professionalCanvas = useRef<ProfessionalCanvas | null>(null);
@@ -69,7 +69,16 @@ export default function DrawScreen() {
   useEffect(() => {
     if (canvasRef.current && !professionalCanvas.current) {
       professionalCanvas.current = new ProfessionalCanvas({
-        canvasSize: { width: screenWidth, height: screenHeight * 0.7 },
+        canvas: {
+          width: screenWidth,
+          height: screenHeight * 0.7,
+          zoom: 1,
+          rotation: 0,
+          offset: { x: 0, y: 0 },
+          isDrawing: false,
+          pressure: 1,
+          tilt: { x: 0, y: 0 },
+        },
         backgroundColor: theme.colors.surface,
       });
       professionalCanvas.current.initialize(canvasRef.current);
@@ -133,13 +142,13 @@ export default function DrawScreen() {
     const state = professionalCanvas.current?.getState();
     if (!state) return;
     
-    const totalStrokes = state.layers.reduce((sum, layer) => sum + layer.strokes.length, 0);
+    const totalStrokes = state.layers.reduce((sum, layer) => sum + (layer.strokes?.length || 0), 0);
     
     if (totalStrokes === 1) {
-      addAchievement('first_stroke', 'First Stroke', 'You made your first mark!');
+      unlockAchievement('first_stroke');
     }
     if (totalStrokes === 100) {
-      addAchievement('hundred_strokes', 'Century Artist', 'Created 100 strokes!');
+      unlockAchievement('hundred_strokes');
     }
   };
 
@@ -194,7 +203,7 @@ export default function DrawScreen() {
         await MediaLibrary.createAlbumAsync('Pikaso', asset, false);
         
         Alert.alert('Success', 'Artwork saved to gallery!');
-        addAchievement('first_export', 'Art Collector', 'Exported your first artwork!');
+        unlockAchievement('first_export');
       };
     } catch (error) {
       Alert.alert('Error', 'Failed to export artwork');
@@ -212,7 +221,7 @@ export default function DrawScreen() {
         dialogTitle: 'Share your artwork',
       });
       
-      addAchievement('first_share', 'Social Artist', 'Shared your first artwork!');
+      unlockAchievement('first_share');
     } catch (error) {
       Alert.alert('Error', 'Failed to share artwork');
     }
@@ -251,8 +260,12 @@ export default function DrawScreen() {
             ))}
           </ScrollView>
           <View style={styles.brushSettings}>
-            <Text style={styles.settingLabel}>Size: {drawingState.currentBrush.settings.minSize}px</Text>
-            <Text style={styles.settingLabel}>Opacity: {Math.round(drawingState.currentBrush.settings.opacity * 100)}%</Text>
+            <Text style={styles.settingLabel}>
+              Size: {drawingState.currentBrush.settings.size?.current ?? drawingState.currentBrush.settings.size}px
+            </Text>
+            <Text style={styles.settingLabel}>
+              Opacity: {Math.round(drawingState.currentBrush.settings.opacity?.current * 100)}%
+            </Text>
           </View>
         </View>
       </Pressable>
@@ -444,7 +457,7 @@ export default function DrawScreen() {
         <View style={styles.brushInfo}>
           <Text style={styles.brushInfoText}>{drawingState.currentBrush.name}</Text>
           <Text style={styles.brushInfoSubtext}>
-            {drawingState.currentBrush.settings.minSize}px
+            {drawingState.currentBrush.settings.size?.current ?? drawingState.currentBrush.settings.size}px
           </Text>
         </View>
       </View>

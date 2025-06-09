@@ -8,7 +8,7 @@ import { ThemeProvider } from './src/contexts/ThemeContext';
 import { UserProgressProvider } from './src/contexts/UserProgressContext';
 import { DrawingProvider } from './src/contexts/DrawingContext';
 import { LearningProvider } from './src/contexts/LearningContext';
-//import { ErrorBoundary } from './src/engines/core/ErrorBoundary';
+import { ErrorBoundary } from './src/engines/core/ErrorBoundary';
 import { errorHandler } from './src/engines/core/ErrorHandler';
 import { eventBus } from './src/engines/core/EventBus';
 // import { performanceMonitor } from './src/engines/core/PerformanceMonitor'; // Not needed right now

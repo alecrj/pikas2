@@ -32,8 +32,7 @@ export interface Layer {
   blendMode: BlendMode;
   data: any; // Canvas image data or vector data
   order: number;
-  // For drawing module: Optionally include strokes[] here for layered structure
-  // strokes?: Stroke[];
+  strokes: Stroke[]; // FIXED: Now included by default, as your app expects
 }
 
 export type BlendMode = 
@@ -58,6 +57,10 @@ export interface DrawingState {
   historyIndex: number;
   canvas: CanvasState;
   selection?: Selection;
+  // canvasSize?: { width: number; height: number }; // If you want, but not required
+  // pan?: { x: number; y: number };
+  // zoom?: number;
+  backgroundColor?: string;
 }
 
 export interface CanvasState {
@@ -435,8 +438,11 @@ export type BrushCategory =
   | 'texture'
   | 'special';
 
+// FIX: BrushSettings - include minSize and maxSize as numbers, to match code
 export interface BrushSettings {
   size: RangeValue;
+  minSize: number; // <--- ADDED for code compatibility
+  maxSize: number; // <--- ADDED for code compatibility
   opacity: RangeValue;
   flow: RangeValue;
   hardness: RangeValue;
