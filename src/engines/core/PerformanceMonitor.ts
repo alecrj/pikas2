@@ -27,6 +27,8 @@ export class PerformanceMonitor {
   // Performance tracking intervals
   private fpsInterval: NodeJS.Timeout | null = null;
   private metricsInterval: NodeJS.Timeout | null = null;
+  // FIXED: Use subscription instead of removeEventListener
+  private appStateSubscription: any = null;
 
   private constructor() {}
 
@@ -43,8 +45,8 @@ export class PerformanceMonitor {
     this.isMonitoring = true;
     console.log('Performance monitoring started (React Native mode)');
 
-    // Monitor app state changes
-    AppState.addEventListener('change', this.handleAppStateChange);
+    // FIXED: Use modern addEventListener that returns subscription
+    this.appStateSubscription = AppState.addEventListener('change', this.handleAppStateChange);
 
     // Start FPS monitoring
     this.startFPSMonitoring();
@@ -59,8 +61,11 @@ export class PerformanceMonitor {
     this.isMonitoring = false;
     console.log('Performance monitoring stopped');
 
-    // Remove app state listener
-    AppState.removeEventListener('change', this.handleAppStateChange);
+    // FIXED: Remove subscription properly
+    if (this.appStateSubscription) {
+      this.appStateSubscription.remove();
+      this.appStateSubscription = null;
+    }
 
     // Clear intervals
     if (this.fpsInterval) {
@@ -188,6 +193,13 @@ export class PerformanceMonitor {
 
   public recordInputLatency(latency: number): void {
     this.metrics.inputLatency = latency;
+  }
+
+  // FIXED: Added missing resetDrawCalls method that LessonEngine needs
+  public resetDrawCalls(): void {
+    this.drawCallCount = 0;
+    this.metrics.drawCalls = 0;
+    console.log('Draw calls counter reset');
   }
 
   public getMetrics(): PerformanceMetrics {

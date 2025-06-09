@@ -49,6 +49,7 @@ interface UserProgressContextValue {
   recommendedLessons: string[];
   
   // Actions
+  createUser: (userData: Partial<User>) => Promise<User>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   updateProfile: (updates: Partial<User>) => Promise<void>;
@@ -108,7 +109,6 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
     return () => {
       unsubscribeUser();
       unsubscribeProgress();
-      unsubscribePortfolio();
       unsubscribeLearning();
     };
   }, []);
@@ -170,19 +170,41 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
     setRecommendedLessons(recommended);
   };
 
+  const createUser = async (userData: Partial<User>): Promise<User> => {
+    try {
+      setIsLoading(true);
+      
+      const newUser = await profileSystem.createUser(
+        userData.email || `${userData.displayName || 'newartist'}@pikaso.app`,
+        userData.username || userData.displayName?.toLowerCase().replace(/\s+/g, '') || 'newartist',
+        userData.displayName || 'New Artist'
+      );
+
+      setUser(newUser);
+      await loadUserData();
+      
+      return newUser;
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('USER_CREATE_ERROR', 'Failed to create user', 'high', error)
+      );
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const login = async (email: string, password: string) => {
     try {
       setIsLoading(true);
-      // In production, this would authenticate with backend
-      // For MVP, we'll create/load a local user
       const existingUser = profileSystem.getCurrentUser();
       if (existingUser && existingUser.email === email) {
         setUser(existingUser);
       } else {
         const newUser = await profileSystem.createUser(
           email,
-          email.split('@')[0], // username from email
-          email.split('@')[0]  // display name from email
+          email.split('@')[0],
+          email.split('@')[0]
         );
         setUser(newUser);
       }
@@ -227,7 +249,6 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
     try {
       const result = await profileSystem.addXP(amount);
       if (result.leveledUp) {
-        // Celebrate level up
         if (typeof window !== 'undefined' && (window as any).celebrateLevelUp) {
           (window as any).celebrateLevelUp({
             newLevel: result.newLevel,
@@ -242,18 +263,15 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
     }
   };
 
-  // FIXED: Correct achievement method as per instructions
   const addAchievement = async (achievementId: string) => {
     if (!user) return;
-    // Try to find achievement by ID
-    const achievement = user.achievements.find(a => a.id === achievementId);
+    const achievement = user.achievements.find((a: Achievement) => a.id === achievementId);
     if (achievement && !achievement.unlockedAt) {
       achievement.unlockedAt = new Date();
       await progressionSystem.unlockAchievement(achievement);
       setUser({ ...user });
       setRecentAchievements(prev => [achievement, ...prev].slice(0, 5));
       await loadAchievements();
-      // Achievement notification (optional)
       if (typeof window !== 'undefined' && (window as any).showAchievementUnlocked) {
         (window as any).showAchievementUnlocked(achievement);
       }
@@ -295,20 +313,15 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
   const achievementProgress = progressionSystem.getAchievementProgress();
 
   const value: UserProgressContextValue = {
-    // User state
     user,
     isLoading,
     isAuthenticated: !!user,
-    
-    // Progress state
     level,
     xp,
     xpToNextLevel: xpForNextLevel - xp,
     xpProgress,
     streakDays,
     dailyGoalProgress,
-    
-    // Achievements
     achievements,
     recentAchievements,
     achievementProgress: {
@@ -318,17 +331,12 @@ export const UserProgressProvider: React.FC<{ children: ReactNode }> = ({ childr
         ? (achievementProgress.unlocked / achievementProgress.total) * 100 
         : 0,
     },
-    
-    // Portfolio
     artworks,
     portfolioStats,
-    
-    // Learning progress
     learningProgress,
     currentLesson,
     recommendedLessons,
-    
-    // Actions
+    createUser,
     login,
     logout,
     updateProfile,
@@ -354,7 +362,7 @@ export const useUserProgress = (): UserProgressContextValue => {
   return context;
 };
 
-// Hooks for specific user data
+// FIXED: Properly export all hooks
 export const useUser = () => {
   const { user, isLoading, isAuthenticated } = useUserProgress();
   return { user, isLoading, isAuthenticated };

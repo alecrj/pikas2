@@ -20,6 +20,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../src/contexts/ThemeContext';
+import { useUserProgress } from '../src/contexts/UserProgressContext';
 import {
   Palette,
   BookOpen,
@@ -110,19 +111,21 @@ const goals = [
 export default function OnboardingScreen() {
   const router = useRouter();
   const theme = useTheme();
+  const { createUser, isLoading } = useUserProgress();
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedSkillLevel, setSelectedSkillLevel] = useState('beginner');
   const [selectedGoals, setSelectedGoals] = useState<string[]>(['hobby']);
   const [userName, setUserName] = useState('');
 
   const progressValue = useSharedValue(0);
+  const totalSteps = onboardingSteps.length + 2; // Welcome steps + skill level + goals
 
   const styles = createStyles(theme);
 
   const handleNext = () => {
-    if (currentStep < onboardingSteps.length + 1) {
+    if (currentStep < totalSteps - 1) {
       setCurrentStep(currentStep + 1);
-      progressValue.value = withSpring((currentStep + 1) / (onboardingSteps.length + 2));
+      progressValue.value = withSpring((currentStep + 1) / totalSteps);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } else {
       completeOnboarding();
@@ -145,15 +148,24 @@ export default function OnboardingScreen() {
 
   const completeOnboarding = async () => {
     try {
-      // FIXED: Simple implementation - just store data locally for now
-      // In Phase 2, this will integrate with proper user management
-      console.log('Onboarding completed:', {
+      // Create user profile with onboarding data - using only known properties
+      await createUser({
+        displayName: userName || 'New Artist',
+        email: `${(userName || 'newartist').toLowerCase()}@pikaso.app`,
+        // Store onboarding data in a way that's compatible with existing types
+        // Note: We'll store skill level and goals in user profile after creation
+      });
+      
+      // TODO: Store additional onboarding data (skillLevel, goals) after user creation
+      // This might need to be stored separately or in user preferences
+      console.log('Onboarding data:', {
         skillLevel: selectedSkillLevel,
         goals: selectedGoals,
-        userName: userName || 'New Artist',
       });
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      // Navigate to main app
       router.replace('/(tabs)');
     } catch (error) {
       console.error('Failed to complete onboarding:', error);
@@ -347,6 +359,11 @@ export default function OnboardingScreen() {
     );
   };
 
+  const isLastStep = currentStep === totalSteps - 1;
+  const canProceed = currentStep < onboardingSteps.length || 
+                     (currentStep === onboardingSteps.length) ||
+                     (currentStep === onboardingSteps.length + 1 && selectedGoals.length > 0);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Progress Bar */}
@@ -372,13 +389,23 @@ export default function OnboardingScreen() {
       {/* Next Button */}
       <View style={styles.buttonContainer}>
         <Pressable
-          style={[styles.nextButton, { backgroundColor: theme.colors.primary }]}
+          style={[
+            styles.nextButton, 
+            { 
+              backgroundColor: canProceed ? theme.colors.primary : theme.colors.border,
+              opacity: canProceed ? 1 : 0.6,
+            }
+          ]}
           onPress={handleNext}
+          disabled={!canProceed || isLoading}
         >
-          <Text style={styles.nextButtonText}>
-            {currentStep >= onboardingSteps.length + 1 ? 'Get Started' : 'Continue'}
+          <Text style={[
+            styles.nextButtonText,
+            { color: canProceed ? '#FFFFFF' : theme.colors.textSecondary }
+          ]}>
+            {isLoading ? 'Setting up...' : isLastStep ? 'Get Started' : 'Continue'}
           </Text>
-          <ArrowRight size={20} color="#FFFFFF" />
+          {!isLoading && <ArrowRight size={20} color={canProceed ? "#FFFFFF" : theme.colors.textSecondary} />}
         </Pressable>
       </View>
     </View>
@@ -545,7 +572,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     gap: 8,
   },
   nextButtonText: {
-    color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
   },

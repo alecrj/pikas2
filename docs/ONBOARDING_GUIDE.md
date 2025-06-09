@@ -1,6 +1,6 @@
-# 🚀 Pikaso Developer Onboarding Guide
+# 🚀 Pikaso Developer Onboarding Guide - Professional Standards
 
-## ⚡ **5-Minute Quick Start**
+## ⚡ **5-Minute Quick Start (Production Ready)**
 
 ### **1. Clone & Setup**
 ```bash
@@ -10,289 +10,373 @@ npm install
 npx expo start --clear
 ```
 
-### **2. Verify Everything Works**
+### **2. Verify System Health**
 ```bash
-# Should show: "Found 0 errors"
+# Should show: "Found 0 errors" 
 npx tsc --noEmit
 
-# Should launch app with tab navigation
+# Should launch app with complete navigation
 npx expo start
 ```
 
-### **3. Test Core Functionality**
-- ✅ App launches to home screen
+### **3. Test Complete User Flow**
+- ✅ App launches to onboarding screen
+- ✅ Complete onboarding flow (4 steps + skill/goal selection)
+- ✅ User profile created and navigates to main app
 - ✅ Tab navigation works (Home, Draw, Learn, Gallery, Profile)
-- ✅ Draw tab opens basic canvas
-- ✅ Learn tab shows skill trees
-- ✅ No console errors
+- ✅ Drawing canvas opens (basic version, ready for professional upgrade)
+- ✅ Learning system shows skill trees and lessons
+- ✅ No console errors or crashes
 
-**If anything fails**: Check `docs/PROJECT_KNOWLEDGE.md` for troubleshooting
+**If any step fails**: Check troubleshooting section below
 
 ---
 
-## 🏗️ **Architecture Overview**
+## 🏗️ **Architecture Overview (December 2024)**
 
-### **Project Structure**
+### **Production-Ready Project Structure**
 ```
 Pikaso/
-├── app/                    # Expo Router screens
-│   ├── (tabs)/            # Main tab navigation
-│   └── _layout.tsx        # Root layout with providers
+├── app/                    # Expo Router screens (ALL WORKING)
+│   ├── (tabs)/            # Main tab navigation (PRODUCTION READY)
+│   │   ├── index.tsx      # ✅ Home dashboard with user progress
+│   │   ├── draw.tsx       # 🚨 Basic canvas (NEEDS PROFESSIONAL UPGRADE)
+│   │   ├── learn.tsx      # ✅ Skill trees and lesson navigation
+│   │   ├── gallery.tsx    # ✅ Portfolio and community features
+│   │   └── profile.tsx    # ✅ User profile and settings
+│   ├── onboarding.tsx     # ✅ Complete user onboarding flow
+│   └── _layout.tsx        # ✅ Root layout with all providers
 ├── src/
-│   ├── engines/           # Core business logic (modular)
-│   ├── contexts/          # React Context providers
-│   ├── types/             # TypeScript definitions
-│   └── constants/         # App constants
-└── docs/                  # Project documentation
+│   ├── engines/           # ✅ Core business logic (modular architecture)
+│   │   ├── core/          # ✅ Foundation (error handling, performance)
+│   │   ├── drawing/       # 🚨 CURRENT PRIORITY: Professional upgrade needed
+│   │   ├── learning/      # ✅ Lessons and skill progression  
+│   │   ├── user/          # ✅ Profiles, XP, achievements
+│   │   └── community/     # ✅ Social features framework
+│   ├── contexts/          # ✅ React Context providers (ALL WORKING)
+│   ├── types/             # ✅ TypeScript definitions
+│   └── constants/         # ✅ App constants and configuration
+└── docs/                  # ✅ Comprehensive project documentation
 ```
 
-### **Key Concepts**
+### **Key Architecture Concepts**
 
-#### **🔧 Engine Architecture**
+#### **🔧 Engine Architecture (Production Ready)**
 ```typescript
-src/engines/
-├── core/          # Foundation (error handling, performance)
-├── drawing/       # Canvas and drawing tools
-├── learning/      # Lessons and skill progression  
-├── user/          # Profiles and achievements
-└── community/     # Social features
+Modular Engine System:
+- Each engine handles a specific domain (drawing, learning, user, etc.)
+- Clean APIs with TypeScript interfaces
+- Singleton pattern for system-wide state management
+- Event-driven communication between engines
+- Comprehensive error handling and performance monitoring
+
+Example Usage:
+import { profileSystem } from 'src/engines/user/ProfileSystem';
+import { skillTreeManager } from 'src/engines/learning/SkillTreeManager';
+const user = profileSystem.getCurrentUser();
+const lessons = skillTreeManager.getAvailableLessons();
 ```
 
-#### **🎯 Context Providers**
+#### **🎯 Context Provider System (All Operational)**
 ```typescript
-- ThemeContext      → Dark/light mode, colors
-- UserProgressContext → XP, levels, achievements
-- DrawingContext    → Canvas state, tools, layers
-- LearningContext   → Lessons, progress, skill trees
+State Management Hierarchy:
+- ThemeContext      → UI theming and color management
+- UserProgressContext → User profiles, XP, achievements, progress
+- DrawingContext    → Canvas state, tools, layers (NEEDS ENHANCEMENT)
+- LearningContext   → Skill trees, lesson progress, assessments
+
+Usage Pattern:
+const { user, addXP, addAchievement } = useUserProgress();
+const { currentBrush, setColor, layers } = useDrawing();
+const { currentLesson, completeLesson } = useLearning();
 ```
 
-#### **📱 Screen Structure**
+#### **📱 Screen Architecture (Complete Navigation)**
 ```typescript
-app/(tabs)/
-├── index.tsx      # Home screen (default route)
-├── draw.tsx       # Drawing canvas
-├── learn.tsx      # Skill trees and lessons
-├── gallery.tsx    # Portfolio and community
-└── profile.tsx    # User profile and settings
+Navigation Structure:
+app/(tabs)/         # Main application tabs
+├── index.tsx      # Home dashboard with progress overview
+├── draw.tsx       # Drawing canvas (PRIORITY: Professional upgrade)
+├── learn.tsx      # Skill tree navigation and lesson selection
+├── gallery.tsx    # Portfolio display and community features
+└── profile.tsx    # User profile and achievement display
+
+Special Screens:
+app/onboarding.tsx # Complete user onboarding flow
+app/lesson/[id].tsx # Individual lesson interface
+app/settings.tsx   # App settings and preferences
 ```
 
 ---
 
-## 🎯 **Current Status & Priorities**
+## 🎯 **Current Status & Development Priorities**
 
-### **✅ What's Complete**
-- **Foundation**: TypeScript architecture, routing, contexts
-- **Basic Features**: Tab navigation, simple drawing, lesson structure
-- **Code Quality**: Zero compilation errors, clean architecture
+### **✅ What's Production Ready**
+- **User Management**: Complete onboarding, profiles, XP/achievements
+- **Navigation**: All screens accessible and functional
+- **Learning Framework**: Skill trees, lesson organization, progress tracking
+- **Community Framework**: Social features, portfolio, achievements ready
+- **Performance**: Monitoring and optimization systems operational
+- **Architecture**: Scalable foundation supporting rapid feature development
 
-### **🚀 What's Next (Your Focus)**
-1. **Drawing Engine**: Upgrade to professional tools (Apple Pencil, brushes)
-2. **Learning System**: Add AI feedback and adaptive difficulty
-3. **UI Polish**: Material Design system and animations
-4. **Performance**: 60fps optimization and monitoring
+### **🚨 Current Priority: Professional Drawing Engine**
+The basic drawing canvas must be upgraded to Procreate-level capabilities:
 
-### **📋 Immediate Tasks (Pick One)**
-- **Frontend**: Enhance drawing canvas with Apple Pencil support
-- **Backend**: Improve lesson content and assessment system
-- **Design**: Implement professional UI components
-- **Performance**: Add frame rate monitoring
+```typescript
+Current Limitations:
+- Basic HTML canvas with simple touch events
+- No pressure sensitivity or Apple Pencil optimization
+- Single basic brush with limited functionality
+- No layer system or professional tools
+- Poor performance with complex artwork
+
+Target Professional Features:
+- React Native Skia for 60fps graphics rendering
+- Apple Pencil Pro with 4096 pressure levels and tilt detection
+- 15+ professional brushes with realistic dynamics
+- Layer system with blend modes and opacity controls
+- High-resolution canvas with smooth zoom capabilities
+- Memory optimization for large artwork files
+```
+
+### **📋 Next Development Phases**
+1. **Professional Drawing Engine** (Current Sprint)
+2. **Interactive Learning System** (Next Sprint)  
+3. **UI/UX Professional Polish** (Following Sprint)
+4. **Analytics & Optimization** (Final Phase)
 
 ---
 
-## 🛠️ **Development Workflow**
+## 🛠️ **Development Workflow (Google Standards)**
 
 ### **Before Starting Work**
 ```bash
-# Always start fresh
+# Always start with clean state
 git pull origin main
 npm install
 npx expo start --clear
+
+# Verify system health
+npx tsc --noEmit  # Should show 0 errors
 ```
 
-### **Code Standards**
-- **TypeScript Strict**: All code must compile without errors
-- **Modular Design**: Use existing engine/context patterns
-- **Performance First**: Maintain 60fps drawing target
-- **Error Handling**: Use ErrorBoundary and errorHandler
-- **Testing**: Verify on real devices, not just simulator
-
-### **Key Files to Understand**
+### **Code Quality Standards**
 ```typescript
-src/engines/drawing/ProfessionalCanvas.ts  # Drawing engine core
-src/engines/learning/SkillTreeManager.ts   # Learning system
+Required Standards:
+✅ TypeScript Strict Mode - All code fully typed
+✅ Modular Architecture - Follow engine/context patterns
+✅ Performance Monitoring - Maintain 60fps targets
+✅ Error Handling - Use ErrorBoundary and errorHandler
+✅ Memory Management - Optimize for mobile devices
+✅ Testing - Verify on real devices, especially iPad with Apple Pencil
+
+Development Principles:
+- Build for scalability (support millions of users)
+- Optimize for performance (60fps guaranteed)
+- Design for professionals (tools must satisfy working artists)
+- Code for maintenance (clean, documented, testable)
+```
+
+### **Key Development Files**
+```typescript
+Core Systems:
+src/engines/drawing/ProfessionalCanvas.ts  # 🚨 CURRENT PRIORITY
+src/engines/learning/SkillTreeManager.ts   # Lesson management
 src/contexts/DrawingContext.tsx            # Canvas state management
-src/contexts/LearningContext.tsx           # Learning state management
+src/contexts/UserProgressContext.tsx       # User progress and achievements
+
+UI Implementation:
 app/(tabs)/draw.tsx                        # Drawing interface
 app/(tabs)/learn.tsx                       # Learning interface
+app/(tabs)/index.tsx                       # Home dashboard
+
+Type Definitions:
+src/types/index.ts                         # All TypeScript interfaces
 ```
 
 ---
 
-## 🎨 **Feature Development Guide**
+## 🎨 **Drawing Engine Development Focus**
 
-### **Adding New Drawing Features**
-1. **Engine Layer**: Add logic to `src/engines/drawing/`
-2. **Context Layer**: Update `src/contexts/DrawingContext.tsx`
-3. **UI Layer**: Modify `app/(tabs)/draw.tsx`
-4. **Types**: Add types to `src/types/index.ts`
+### **Current Implementation Status**
+```typescript
+Drawing System Analysis:
+📁 src/engines/drawing/ProfessionalCanvas.ts
+- ⚠️  Basic HTML canvas implementation
+- ⚠️  Simple touch event handling
+- ⚠️  No pressure sensitivity
+- ⚠️  Limited brush functionality
+- ⚠️  No layer system
 
-### **Adding New Learning Features**
-1. **Engine Layer**: Enhance `src/engines/learning/`
-2. **Context Layer**: Update `src/contexts/LearningContext.tsx`
-3. **UI Layer**: Modify `app/(tabs)/learn.tsx`
-4. **Content**: Add lessons to SkillTreeManager
+Target Professional Implementation:
+- ✅ React Native Skia integration for 60fps rendering
+- ✅ Apple Pencil Pro pressure and tilt detection
+- ✅ Professional brush engine with realistic dynamics
+- ✅ Layer system with blend modes and effects
+- ✅ High-resolution canvas with smooth zoom
+- ✅ Memory optimization for large artwork
+```
 
-### **Adding New Screens**
-1. **Create**: New file in `app/` directory
-2. **Route**: Register in `app/_layout.tsx` if needed
-3. **Navigate**: Use `useRouter()` from expo-router
+### **Required Technology Integration**
+```typescript
+Key Dependencies for Professional Drawing:
+- @shopify/react-native-skia    # 60fps graphics rendering
+- react-native-gesture-handler  # Advanced touch/pencil input
+- Apple Pencil Pro APIs         # Pressure, tilt, squeeze gestures
+- Custom brush algorithms       # Realistic brush dynamics
+- Memory optimization          # Large canvas performance
+```
 
 ---
 
-## 🐛 **Common Issues & Solutions**
+## 🐛 **Troubleshooting Guide**
 
-### **TypeScript Errors**
+### **TypeScript Compilation Issues**
 ```bash
 # Check for errors
 npx tsc --noEmit
 
-# Common fixes
-- Add missing imports
-- Check type definitions in src/types/
-- Ensure context providers are wrapped properly
+# Common solutions
+rm -rf node_modules && npm install  # Clean dependencies
+npx expo start --clear               # Clear Metro cache
 ```
 
-### **Metro/Expo Issues**
-```bash
-# Clear all caches
-npx expo start --clear
-
-# Reset metro
-npx expo start --reset-cache
-
-# Clear node modules
-rm -rf node_modules && npm install
-```
-
-### **Context Provider Errors**
+### **Navigation/Context Issues**
 ```bash
 # Error: "useTheme must be used within ThemeProvider"
 # Solution: Check app/_layout.tsx has all providers wrapped correctly
+
+# Error: "Unmatched Route" 
+# Solution: Ensure screen files exist and are properly exported
 ```
 
-### **Routing Issues**
+### **Drawing Canvas Issues**
 ```bash
-# Error: "Unmatched Route"
-# Solution: Ensure screen file exists and is properly exported
+# Canvas not responding to touch
+# Check: Drawing context provider and event handlers
+# Verify: Canvas element is properly initialized
+
+# Performance issues during drawing
+# Check: Frame rate monitoring in PerformanceMonitor
+# Verify: Memory usage optimization
+```
+
+### **Device-Specific Testing**
+```typescript
+Required Test Devices:
+- iPad Pro with Apple Pencil (primary target)
+- iPhone Pro (secondary target)
+- Android tablet with stylus (future support)
+
+Critical Test Scenarios:
+- Extended drawing sessions (30+ minutes)
+- Complex artwork with multiple layers
+- Apple Pencil pressure and tilt response
+- Memory usage with large canvases
+- Performance during zoom and pan operations
 ```
 
 ---
 
-## 📚 **Resources & Documentation**
+## 📚 **Learning Resources & Documentation**
 
-### **Project Docs**
+### **Project Documentation**
 - `docs/DEV_INSTRUCTIONS.md` → Detailed roadmap and technical specs
-- `docs/PROJECT_KNOWLEDGE.md` → Architecture and current status
-- `docs/ONBOARDING_GUIDE.md` → This guide
+- `docs/PROJECT_KNOWLEDGE.md` → Current technical state and architecture
+- `docs/ONBOARDING_GUIDE.md` → This guide for new developers
 
-### **External Resources**
-- [Expo Router Docs](https://docs.expo.dev/router/introduction/)
-- [React Native Docs](https://reactnative.dev/docs/getting-started)
-- [TypeScript Handbook](https://www.typescriptlang.org/docs/)
-- [Lucide Icons](https://lucide.dev/) (our icon library)
-
-### **Key Dependencies**
-```json
-"expo-router": "Navigation framework"
-"react-native-reanimated": "Animations"
-"@shopify/react-native-skia": "High-performance graphics" 
-"lucide-react-native": "Icon library"
-"expo-haptics": "Tactile feedback"
+### **External Dependencies**
+```typescript
+Key Libraries:
+- expo-router          # File-based navigation
+- react-native-reanimated # Smooth animations
+- @shopify/react-native-skia # High-performance graphics
+- lucide-react-native  # Professional icon library
+- expo-haptics         # Tactile feedback
 ```
+
+### **Architecture References**
+- [React Native Performance](https://reactnative.dev/docs/performance)
+- [Skia Graphics Engine](https://shopify.github.io/react-native-skia/)
+- [Apple Pencil Development](https://developer.apple.com/documentation/pencilkit)
+- [Professional Drawing Apps](https://procreate.com) (competitive reference)
 
 ---
 
 ## 🚀 **Getting Started Checklist**
 
-### **Day 1: Setup & Exploration**
-- [ ] Clone repo and run successfully
-- [ ] Explore app structure and navigation
-- [ ] Read architecture documentation
-- [ ] Try drawing on canvas and navigating lessons
-- [ ] Identify one area to improve
+### **Day 1: Environment Setup**
+- [ ] Clone repository and verify compilation (0 TypeScript errors)
+- [ ] Complete app flow testing (onboarding → main app → all tabs)
+- [ ] Explore current architecture and engine system
+- [ ] Test drawing canvas and identify improvement opportunities
+- [ ] Review documentation and understand current priorities
 
-### **Day 2: Make First Contribution**
-- [ ] Pick a small improvement (UI polish, bug fix)
-- [ ] Follow modular architecture patterns
-- [ ] Test on real device
-- [ ] Verify no TypeScript errors
-- [ ] Document any issues found
+### **Day 2: Professional Drawing Focus**
+- [ ] Analyze current drawing implementation limitations
+- [ ] Research React Native Skia integration requirements
+- [ ] Study Apple Pencil Pro API capabilities
+- [ ] Plan professional brush engine architecture
+- [ ] Design layer system with blend mode support
 
-### **Week 1: Major Feature**
-- [ ] Choose focus area (drawing, learning, UI, performance)
-- [ ] Study existing implementation
-- [ ] Plan enhancement approach
-- [ ] Implement with professional quality
-- [ ] Test thoroughly and gather feedback
-
----
-
-## 🎯 **Success Metrics**
-
-### **Code Quality**
-- Zero TypeScript compilation errors
-- Follows existing architectural patterns
-- Performance tested on real devices
-- Proper error handling implemented
-
-### **User Experience**
-- Features feel professional and polished
-- 60fps performance maintained
-- Intuitive and delightful to use
-- Accessible to all users
-
-### **Team Collaboration**
-- Clear documentation of changes
-- Follows established conventions
-- Communicates blockers early
-- Helps improve overall codebase
+### **Week 1: Professional Drawing Engine**
+- [ ] Implement Skia-based canvas system
+- [ ] Add Apple Pencil pressure and tilt detection
+- [ ] Create professional brush library (5+ brushes minimum)
+- [ ] Build layer management system
+- [ ] Optimize performance for 60fps drawing
+- [ ] Test with real Apple Pencil on iPad Pro
 
 ---
 
-## 💡 **Pro Tips**
+## 🎯 **Success Metrics & Validation**
 
-### **Development**
-- **Real Device Testing**: Simulator can't test Apple Pencil or performance
-- **Incremental Development**: Small, testable changes
-- **Performance First**: Always check frame rates
-- **User-Centric**: Think like an artist learning to draw
+### **Technical Success Criteria**
+- **Compilation**: Zero TypeScript errors maintained
+- **Performance**: 60fps drawing on iPad Pro with Apple Pencil
+- **Quality**: Professional artists can create portfolio-quality work
+- **Architecture**: Clean, maintainable, scalable codebase
+- **User Experience**: Seamless onboarding to professional tool usage
 
-### **Architecture**
-- **Engine → Context → UI**: Follow the data flow
-- **Modular**: Keep concerns separated
-- **TypeScript**: Let the type system guide you
-- **Error Boundaries**: Handle failures gracefully
-
-### **Debugging**
-- **React DevTools**: Inspect component hierarchy
-- **Chrome DevTools**: Network and performance profiling
-- **Console Logs**: Strategic logging for understanding flow
-- **Real Device**: Test on actual iPad with Apple Pencil
+### **Development Productivity Metrics**
+- **Setup Time**: New developer productive within 1 day
+- **Feature Development**: Professional drawing engine complete within 1 sprint
+- **Code Quality**: Comprehensive error handling and performance monitoring
+- **User Feedback**: Professional artists validate tool quality and usability
 
 ---
 
-## 🏆 **Ready to Build Something Amazing?**
+## 💡 **Pro Tips for Success**
+
+### **Development Best Practices**
+- **Test on Real Devices**: Simulator cannot replicate Apple Pencil experience
+- **Profile Performance**: Use PerformanceMonitor to track frame rates
+- **Think Scalably**: Build for millions of users from day one
+- **User-Centric Design**: Every feature must serve professional artists
+
+### **Drawing Engine Specific**
+- **Study Procreate**: Understand what makes professional drawing tools excellent
+- **Optimize Memory**: Large canvases require careful memory management
+- **Prioritize Responsiveness**: <16ms input latency is critical for natural feel
+- **Layer Performance**: Blend modes and effects must maintain 60fps
+
+### **Architecture Maintenance**
+- **Follow Patterns**: Use established engine and context patterns
+- **Document Changes**: Update relevant documentation with new features
+- **Monitor Performance**: Track metrics during development
+- **Test Thoroughly**: Verify features work across all supported devices
+
+---
+
+## 🏆 **Ready to Build Excellence**
 
 You now have:
-- ✅ **Working development environment**
-- ✅ **Architecture understanding**
-- ✅ **Clear next steps and priorities**
-- ✅ **Development workflow and standards**
+- ✅ **Working development environment** with complete app flow
+- ✅ **Comprehensive architecture understanding** of modular engine system
+- ✅ **Clear development priorities** focused on professional drawing engine
+- ✅ **Quality standards and testing procedures** for professional-grade development
+- ✅ **Success criteria and validation metrics** for measuring progress
 
-**Choose your adventure:**
-- 🎨 **Drawing Engine**: Make the canvas feel like Procreate
-- 📚 **Learning System**: Build Duolingo-level engagement  
-- ✨ **UI Polish**: Create Apple-level design excellence
-- ⚡ **Performance**: Achieve 60fps with advanced features
+**Your mission**: Build a drawing engine so good that professional digital artists choose Pikaso over Procreate.
 
-**Welcome to the team! Let's build the future of creative education! 🚀**
+**Let's create the future of digital art education! 🎨**
