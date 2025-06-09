@@ -7,6 +7,8 @@ export { EventBus } from './EventBus';
 
 import { ErrorHandler } from './ErrorHandler';
 import { PerformanceMonitor } from './PerformanceMonitor';
+import { DataManager } from './DataManager';
+import { EventBus } from './EventBus';
 
 export const errorHandler = ErrorHandler.getInstance();
 export const performanceMonitor = PerformanceMonitor.getInstance();

@@ -62,6 +62,9 @@ export interface DrawingState {
   pan: { x: number; y: number };
   zoom: number;
   backgroundColor: string;
+  availableBrushes: Brush[];
+  colorPalette: string[];
+  recentColors: string[];
 }
 
 export interface CanvasState {

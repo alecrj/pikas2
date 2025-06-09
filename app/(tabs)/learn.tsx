@@ -59,8 +59,13 @@ export default function LearnScreen() {
     
     // Subscribe to progress updates
     const unsubscribe = skillTreeManager.subscribeToProgress((progress) => {
-      setProgressMap(progress);
-    });
+        // Convert the skill trees array to a Map
+        const map = new Map<string, SkillTreeProgress>();
+        progress.skillTrees.forEach(tree => {
+          map.set(tree.skillTreeId, tree);
+        });
+        setProgressMap(map);
+      });
     
     return unsubscribe;
   }, []);

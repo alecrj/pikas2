@@ -38,9 +38,9 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="lesson/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="drawing/[id]" options={{ presentation: 'fullScreen' }} />
+        <Stack.Screen name="drawing/[id]" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="profile/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="onboarding" options={{ presentation: 'fullScreen' }} />
+        <Stack.Screen name="onboarding" options={{ presentation: 'fullScreenModal' }} />
         <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
       </Stack>
     </>

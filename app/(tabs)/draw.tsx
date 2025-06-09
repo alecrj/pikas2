@@ -160,49 +160,34 @@ export default function DrawScreen() {
 
   const handleExport = async () => {
     try {
-      // FIXED: exportImage() expects 0 arguments
-      const blob = await professionalCanvas.current?.exportImage();
-      if (!blob) return;
-      // Only run FileReader if it's a Blob
-      if (blob instanceof Blob) {
-        const reader = new FileReader();
-        reader.readAsDataURL(blob);
-        reader.onloadend = async () => {
-          const base64 = reader.result as string;
-          const { status } = await MediaLibrary.requestPermissionsAsync();
-          if (status !== 'granted') {
-            Alert.alert('Permission needed', 'Please grant permission to save images.');
-            return;
-          }
-          const asset = await MediaLibrary.createAssetAsync(base64);
-          await MediaLibrary.createAlbumAsync('Pikaso', asset, false);
-          Alert.alert('Success', 'Artwork saved to gallery!');
-          addAchievement('first_export');
-        };
-      } else {
-        Alert.alert('Export error', 'Unknown image export type');
+      const dataUrl = professionalCanvas.current?.exportImage();
+      if (!dataUrl) return;
+      
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission needed', 'Please grant permission to save images.');
+        return;
       }
+      
+      const asset = await MediaLibrary.createAssetAsync(dataUrl);
+      await MediaLibrary.createAlbumAsync('Pikaso', asset, false);
+      Alert.alert('Success', 'Artwork saved to gallery!');
+      addAchievement('first_export');
     } catch (error) {
       Alert.alert('Error', 'Failed to export artwork');
     }
   };
-
+  
   const handleShare = async () => {
     try {
-      // FIXED: exportImage() expects 0 arguments
-      const blob = await professionalCanvas.current?.exportImage();
-      if (!blob) return;
-      if (blob instanceof Blob) {
-        // FIXED: Pass Blob, not string, to createObjectURL
-        const url = URL.createObjectURL(blob);
-        await Sharing.shareAsync(url, {
-          mimeType: 'image/png',
-          dialogTitle: 'Share your artwork',
-        });
-        addAchievement('first_share');
-      } else {
-        Alert.alert('Share error', 'Unknown image export type');
-      }
+      const dataUrl = professionalCanvas.current?.exportImage();
+      if (!dataUrl) return;
+      
+      await Sharing.shareAsync(dataUrl, {
+        mimeType: 'image/png',
+        dialogTitle: 'Share your artwork',
+      });
+      addAchievement('first_share');
     } catch (error) {
       Alert.alert('Error', 'Failed to share artwork');
     }
