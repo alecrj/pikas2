@@ -71,11 +71,11 @@ export class PerformanceOptimizer {
 
   public startFrame(): void {
     this.frameCount++;
-    this.lastFrameTime = performance.now();
+    this.lastFrameTime = Date.now();
   }
 
   public endFrame(): void {
-    const frameTime = performance.now() - this.lastFrameTime;
+    const frameTime = Date.now() - this.lastFrameTime;
     this.frameTimeHistory.push(frameTime);
     
     // Keep last 60 frames for analysis
@@ -165,7 +165,7 @@ export class PerformanceOptimizer {
     return {
       x: currentPoint.x + dx * predictionFactor,
       y: currentPoint.y + dy * predictionFactor,
-      pressure: currentPoint.pressure,
+      pressure: currentPoint.pressure || 0.5,
       tiltX: currentPoint.tiltX,
       tiltY: currentPoint.tiltY,
       timestamp: currentPoint.timestamp + 8, // Predict 8ms ahead
@@ -190,8 +190,10 @@ export class PerformanceOptimizer {
       if (distance > threshold) {
         coalescedPoints.push(currentPoint);
       } else {
-        // Merge pressure values
-        lastPoint.pressure = (lastPoint.pressure + currentPoint.pressure) / 2;
+        // Merge pressure values safely
+        const lastPressure = lastPoint.pressure || 0.5;
+        const currentPressure = currentPoint.pressure || 0.5;
+        lastPoint.pressure = (lastPressure + currentPressure) / 2;
       }
     }
     
@@ -601,9 +603,9 @@ export class PerformanceOptimizer {
     operation: () => T,
     label: string
   ): T {
-    const start = performance.now();
+    const start = Date.now();
     const result = operation();
-    const duration = performance.now() - start;
+    const duration = Date.now() - start;
     
     if (duration > 16) {
       console.warn(`${label} took ${duration.toFixed(2)}ms`);

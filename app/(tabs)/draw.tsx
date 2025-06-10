@@ -15,18 +15,13 @@ import {
 import {
   Canvas,
   useCanvasRef,
-  Skia,
-  Drawing,
-  Path,
-  Paint,
-  Group,
-  Image as SkiaImage,
 } from '@shopify/react-native-skia';
 import { 
   GestureHandlerRootView, 
   PanGestureHandler, 
   PinchGestureHandler,
-  TapGestureHandler,
+  PanGestureHandlerGestureEvent,
+  PinchGestureHandlerGestureEvent,
   State,
 } from 'react-native-gesture-handler';
 import Animated, { 
@@ -42,6 +37,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../../src/contexts/ThemeContext';
 import { useDrawing } from '../../src/contexts/DrawingContext';
 import { useUserProgress } from '../../src/contexts/UserProgressContext';
@@ -152,6 +148,7 @@ export default function DrawScreen() {
       
       const unsubscribeLayers = professionalCanvas.current.onLayersChange((layers) => {
         // Update context with layer changes
+        console.log('Layers changed:', layers.length);
       });
       
       setCanvasReady(true);
@@ -219,7 +216,7 @@ export default function DrawScreen() {
   }, [isDrawing]);
 
   // Gesture handlers for canvas manipulation
-  const panGestureHandler = useAnimatedGestureHandler({
+  const panGestureHandler = useAnimatedGestureHandler<PanGestureHandlerGestureEvent>({
     onStart: () => {
       if (currentTool === 'move') {
         lastTranslateX.value = translateX.value;
@@ -239,7 +236,7 @@ export default function DrawScreen() {
     },
   });
 
-  const pinchGestureHandler = useAnimatedGestureHandler({
+  const pinchGestureHandler = useAnimatedGestureHandler<PinchGestureHandlerGestureEvent>({
     onStart: () => {
       lastScale.value = scale.value;
     },
@@ -326,11 +323,16 @@ export default function DrawScreen() {
         return;
       }
       
-      // Save to media library
+      // Save to media library using FileSystem
       const filename = `Pikaso_${Date.now()}.png`;
-      const fileUri = `${MediaLibrary.documentDirectory}${filename}`;
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
       
       // Convert base64 to file and save
+      await FileSystem.writeAsStringAsync(fileUri, base64.split(',')[1], {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      // Create asset in media library
       await MediaLibrary.createAssetAsync(fileUri);
       
       Alert.alert('Success', 'Artwork saved to gallery!');
@@ -347,7 +349,15 @@ export default function DrawScreen() {
       const base64 = await professionalCanvas.current?.exportImage('png', 1.0);
       if (!base64) return;
       
-      await Sharing.shareAsync(base64, {
+      // Create temporary file
+      const filename = `Pikaso_${Date.now()}.png`;
+      const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+      
+      await FileSystem.writeAsStringAsync(fileUri, base64.split(',')[1], {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      await Sharing.shareAsync(fileUri, {
         mimeType: 'image/png',
         dialogTitle: 'Share your artwork',
       });
@@ -434,7 +444,7 @@ export default function DrawScreen() {
 
   const renderBrushPicker = () => {
     const allBrushes = brushEngine.getAllBrushes();
-    const categories: BrushCategory[] = ['pencil', 'ink', 'paint', 'watercolor', 'airbrush', 'marker', 'texture', 'eraser'];
+    const categories: BrushCategory[] = ['pencil', 'ink', 'paint', 'watercolor', 'airbrush', 'marker', 'texture'];
     
     return (
       <Modal
@@ -677,9 +687,6 @@ export default function DrawScreen() {
                 <Canvas
                   ref={canvasRef}
                   style={styles.canvas}
-                  onTouch={handleTouchStart}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
                 />
               </Animated.View>
             </PanGestureHandler>

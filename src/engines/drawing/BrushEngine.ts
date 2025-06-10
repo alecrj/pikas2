@@ -1,5 +1,5 @@
 import { Brush, BrushCategory, Point, Color } from '../../types';
-import { Skia, Paint, Path, BlendMode as SkiaBlendMode } from '@shopify/react-native-skia';
+import { Skia, SkPaint, SkPath, PaintStyle, StrokeCap, StrokeJoin, BlendMode as SkiaBlendMode } from '@shopify/react-native-skia';
 import { EventBus } from '../core/EventBus';
 import { dataManager } from '../core/DataManager';
 
@@ -130,23 +130,18 @@ export class BrushEngine {
     return false;
   }
 
-  public createBrushPaint(brush: Brush, color: Color): Paint {
+  public createBrushPaint(brush: Brush, color: Color): SkPaint {
     const paint = Skia.Paint();
     
     // Basic settings
-    paint.setStyle(Skia.PaintStyle.Stroke);
-    paint.setStrokeCap(Skia.StrokeCap.Round);
-    paint.setStrokeJoin(Skia.StrokeJoin.Round);
+    paint.setStyle(PaintStyle.Stroke);
+    paint.setStrokeCap(StrokeCap.Round);
+    paint.setStrokeJoin(StrokeJoin.Round);
     paint.setAntiAlias(true);
     
     // Color with alpha
     const alpha = Math.floor(color.alpha * brush.settings.opacity * 255);
-    const colorWithAlpha = Skia.Color(
-      color.rgb.r,
-      color.rgb.g,
-      color.rgb.b,
-      alpha
-    );
+    const colorWithAlpha = Skia.Color(color.hex);
     paint.setColor(colorWithAlpha);
     
     // Blend mode
@@ -175,7 +170,7 @@ export class BrushEngine {
     
     // Size calculation
     let size = brush.settings.size;
-    if (brush.settings.pressureSensitivity > 0) {
+    if (brush.settings.pressureSensitivity && brush.settings.pressureSensitivity > 0) {
       const pressureEffect = 1 - brush.settings.pressureSensitivity + 
         (brush.settings.pressureSensitivity * mappedPressure);
       size = brush.settings.minSize + (brush.settings.size - brush.settings.minSize) * pressureEffect;
@@ -186,7 +181,7 @@ export class BrushEngine {
       const tiltMagnitude = Math.sqrt(point.tiltX * point.tiltX + point.tiltY * point.tiltY);
       const tiltAngle = Math.atan2(point.tiltY, point.tiltX);
       
-      if (brush.settings.tiltSensitivity > 0) {
+      if (brush.settings.tiltSensitivity && brush.settings.tiltSensitivity > 0) {
         const tiltEffect = 1 - (brush.settings.tiltSensitivity * tiltMagnitude * 0.5);
         size *= tiltEffect;
       }
@@ -196,7 +191,7 @@ export class BrushEngine {
     }
     
     // Velocity dynamics
-    if (brush.velocitySupport && brush.settings.velocitySensitivity > 0) {
+    if (brush.velocitySupport && brush.settings.velocitySensitivity && brush.settings.velocitySensitivity > 0) {
       const velocityEffect = 1 - (brush.settings.velocitySensitivity * Math.min(velocity / 200, 1));
       size *= velocityEffect;
     }
@@ -209,14 +204,14 @@ export class BrushEngine {
     
     // Jitter
     let jitterX = 0, jitterY = 0;
-    if (brush.settings.jitter > 0) {
+    if (brush.settings.jitter && brush.settings.jitter > 0) {
       jitterX = (Math.random() - 0.5) * brush.settings.jitter * size;
       jitterY = (Math.random() - 0.5) * brush.settings.jitter * size;
     }
     
     // Scatter
     let scatterX = 0, scatterY = 0;
-    if (brush.settings.scatter > 0) {
+    if (brush.settings.scatter && brush.settings.scatter > 0) {
       const angle = Math.random() * Math.PI * 2;
       const distance = Math.random() * brush.settings.scatter * size;
       scatterX = Math.cos(angle) * distance;
@@ -281,7 +276,6 @@ export class BrushEngine {
     this.addBrush(this.createMarkerBrush('marker', 'Marker', 5, 0.8));
     this.addBrush(this.createChalkBrush('chalk', 'Chalk', 8, 0.7, 'chalk_texture'));
     this.addBrush(this.createCharcoalBrush('charcoal', 'Charcoal', 12, 0.6, 'charcoal_texture'));
-    this.addBrush(this.createEraserBrush('eraser', 'Eraser', 10, 1.0));
     
     console.log(`Initialized ${this.brushes.size} professional brushes`);
   }
@@ -546,41 +540,6 @@ export class BrushEngine {
     };
   }
 
-  private createEraserBrush(
-    id: string,
-    name: string,
-    defaultSize: number,
-    opacity: number
-  ): Brush {
-    return {
-      id,
-      name,
-      category: 'eraser',
-      icon: '🧹',
-      settings: {
-        size: defaultSize,
-        minSize: 1,
-        maxSize: 100,
-        opacity,
-        flow: 1,
-        hardness: 0.8,
-        spacing: 0.03,
-        smoothing: 0.5,
-        pressureSensitivity: 0.7,
-        tiltSensitivity: 0,
-        velocitySensitivity: 0.1,
-        jitter: 0,
-        scatter: 0,
-      },
-      pressureCurve: [0, 0.3, 0.7, 1],
-      tiltSupport: false,
-      velocitySupport: true,
-      blendMode: 'normal',
-      customizable: true,
-      isEraser: true,
-    };
-  }
-
   private addBrush(brush: Brush): void {
     this.brushes.set(brush.id, brush);
   }
@@ -630,8 +589,8 @@ export class BrushEngine {
     );
   }
 
-  private getSkiaBlendMode(blendMode: string): number {
-    const blendModeMap: Record<string, number> = {
+  private getSkiaBlendMode(blendMode: string): SkiaBlendMode {
+    const blendModeMap: Record<string, SkiaBlendMode> = {
       'normal': SkiaBlendMode.SrcOver,
       'multiply': SkiaBlendMode.Multiply,
       'screen': SkiaBlendMode.Screen,
@@ -647,11 +606,11 @@ export class BrushEngine {
     return blendModeMap[blendMode] || SkiaBlendMode.SrcOver;
   }
 
-  private applyBrushEffects(paint: Paint, brush: Brush): void {
+  private applyBrushEffects(paint: SkPaint, brush: Brush): void {
     // Apply brush-specific effects
     
     // Texture effect
-    if (brush.textureId && brush.settings.textureDepth > 0) {
+    if (brush.textureId && brush.settings.textureDepth && brush.settings.textureDepth > 0) {
       // Would apply texture shader here
       // paint.setShader(textureShader);
     }
@@ -720,7 +679,7 @@ export class BrushEngine {
 
   // ---- PUBLIC UTILITIES ----
 
-  public getBrushPreview(brush: Brush): Path {
+  public getBrushPreview(brush: Brush): SkPath {
     // Create a preview stroke path for brush
     const path = Skia.Path.Make();
     const points = 20;

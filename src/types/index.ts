@@ -1,6 +1,7 @@
-// Core type definitions for Pikaso - Production-ready type system
+// src/types/index.ts
+import { SkPath, SkImage } from '@shopify/react-native-skia';
 
-// --- Canvas Types ---
+// ========================== CORE TYPES ==========================
 
 export interface Point {
   x: number;
@@ -11,6 +12,79 @@ export interface Point {
   timestamp: number;
 }
 
+export interface Color {
+  hex: string;
+  rgb: { r: number; g: number; b: number };
+  hsb: { h: number; s: number; b: number };
+  alpha: number;
+}
+
+// ========================== DRAWING TYPES ==========================
+
+export type DrawingTool = 'brush' | 'eraser' | 'move' | 'select' | 'zoom';
+
+export type DrawingMode = 'normal' | 'reference' | 'guided' | 'timelapse';
+
+export type BlendMode = 
+  | 'normal' 
+  | 'multiply' 
+  | 'screen' 
+  | 'overlay' 
+  | 'soft-light' 
+  | 'hard-light' 
+  | 'color-dodge' 
+  | 'color-burn' 
+  | 'darken' 
+  | 'lighten';
+
+export type BrushCategory = 
+  | 'pencil' 
+  | 'ink' 
+  | 'paint' 
+  | 'watercolor' 
+  | 'airbrush' 
+  | 'marker' 
+  | 'texture' 
+  | 'eraser';
+
+export interface BrushSettings {
+  size: number;
+  minSize: number;
+  maxSize: number;
+  opacity: number;
+  flow: number;
+  hardness: number;
+  spacing: number;
+  smoothing: number;
+  pressureSensitivity?: number;
+  tiltSensitivity?: number;
+  velocitySensitivity?: number;
+  jitter?: number;
+  scatter?: number;
+  textureScale?: number;
+  textureDepth?: number;
+  wetness?: number;
+  mixing?: number;
+  falloff?: number;
+  rotation?: number;
+  graininess?: number;
+}
+
+export interface Brush {
+  id: string;
+  name: string;
+  category: BrushCategory;
+  icon: string;
+  settings: BrushSettings;
+  pressureCurve: number[];
+  tiltSupport: boolean;
+  velocitySupport: boolean;
+  blendMode?: BlendMode;
+  customizable: boolean;
+  textureId?: string;
+  isEraser?: boolean;
+}
+
 export interface Stroke {
   id: string;
   points: Point[];
@@ -18,326 +92,412 @@ export interface Stroke {
   brushId: string;
   size: number;
   opacity: number;
-  blendMode?: BlendMode;
-  smoothing?: number;
+  blendMode: BlendMode;
+  smoothing: number;
+  path?: SkPath;
 }
 
 export interface Layer {
   id: string;
   name: string;
-  type: 'raster' | 'vector' | 'text' | 'adjustment';
-  visible: boolean;
-  locked: boolean;
+  type: 'raster' | 'vector' | 'group';
+  strokes: Stroke[];
   opacity: number;
   blendMode: BlendMode;
-  data: any; // Canvas image data or vector data
+  visible: boolean;
+  locked: boolean;
+  data: any;
   order: number;
-  strokes: Stroke[];
 }
 
-export type BlendMode = 
-  | 'normal'
-  | 'multiply'
-  | 'screen'
-  | 'overlay'
-  | 'soft-light'
-  | 'hard-light'
-  | 'color-dodge'
-  | 'color-burn'
-  | 'darken'
-  | 'lighten';
+export interface DrawingStats {
+  totalStrokes: number;
+  totalTime: number;
+  layersUsed: number;
+  colorsUsed: number;
+  brushesUsed: number;
+  undoCount: number;
+  redoCount: number;
+}
+
+export interface CanvasSettings {
+  pressureSensitivity: boolean;
+  tiltSensitivity: boolean;
+  velocitySensitivity: boolean;
+  palmRejection: boolean;
+  quickMenuEnabled: boolean;
+  autoSave: boolean;
+  autoSaveInterval: number;
+}
+
+export interface HistoryEntry {
+  id: string;
+  action: string;
+  timestamp: number;
+  data: any;
+}
 
 export interface DrawingState {
-  currentTool: 'brush' | 'eraser' | 'smudge' | 'eyedropper' | 'select';
-  currentBrush: Brush;
+  currentTool: DrawingTool;
   currentColor: Color;
+  currentBrush: Brush | null;
+  brushSize: number;
+  opacity: number;
   layers: Layer[];
   activeLayerId: string;
+  strokes: Stroke[];
+  canvasWidth: number;
+  canvasHeight: number;
+  zoom: number;
+  pan: { x: number; y: number };
+  rotation: number;
+  gridVisible: boolean;
+  gridSize: number;
+  referenceImage: string | null;
+  referenceOpacity: number;
+  drawingMode: DrawingMode;
   history: HistoryEntry[];
   historyIndex: number;
-  canvas: CanvasState;
-  selection?: Selection;
-  // FIXED: Added missing properties that code expects
-  canvasSize: { width: number; height: number };
-  pan: { x: number; y: number };
-  zoom: number;
-  backgroundColor: string;
-  availableBrushes: Brush[];
-  colorPalette: string[];
+  stats: DrawingStats;
+  settings: CanvasSettings;
   recentColors: string[];
+  customBrushes: Brush[];
+  savedPalettes: Color[][];
 }
 
-export interface CanvasState {
-  width: number;
-  height: number;
-  zoom: number;
-  rotation: number;
-  offset: { x: number; y: number };
-  isDrawing: boolean;
-  pressure: number;
-  tilt: { x: number; y: number };
-}
+// ========================== LEARNING TYPES ==========================
 
-// --- User Types ---
+export type SkillLevel = 'beginner' | 'intermediate' | 'advanced';
 
-export interface User {
+export type LessonType = 'theory' | 'practice' | 'challenge' | 'assessment';
+
+export type LessonStatus = 'locked' | 'available' | 'in-progress' | 'completed' | 'mastered';
+
+export interface LessonObjective {
   id: string;
-  email: string;
-  username: string;
-  displayName: string;
-  avatarUrl?: string;
-  level: number;
-  xp: number;
-  totalXP: number;
-  streakDays: number;
-  lastActiveDate: Date;
-  createdAt: Date;
-  updatedAt: Date;
-  preferences: UserPreferences;
-  stats: UserStats;
-  achievements: Achievement[];
-  following: string[];
-  followers: string[];
-}
-
-export interface UserPreferences {
-  theme: 'light' | 'dark' | 'system';
-  language: string;
-  notifications: NotificationSettings;
-  privacy: PrivacySettings;
-  drawingPreferences: DrawingPreferences;
-}
-
-export interface NotificationSettings {
-  dailyReminders: boolean;
-  challengeAlerts: boolean;
-  socialActivity: boolean;
-  lessonCompletions: boolean;
-  achievementUnlocks: boolean;
-}
-
-export interface PrivacySettings {
-  profileVisibility: 'public' | 'followers' | 'private';
-  portfolioVisibility: 'public' | 'followers' | 'private';
-  showProgress: boolean;
-  allowMessages: boolean;
-}
-
-export interface DrawingPreferences {
-  defaultBrush: string;
-  pressureSensitivity: number;
-  smoothing: number;
-  gridEnabled: boolean;
-  autosaveInterval: number;
-}
-
-export interface UserStats {
-  lessonsCompleted: number;
-  totalDrawingTime: number;
-  artworksCreated: number;
-  artworksShared: number;
-  challengesCompleted: number;
-  skillsUnlocked: number;
-  perfectLessons: number;
-}
-
-export interface Achievement {
-  id: string;
-  type: AchievementType;
-  title: string;
   description: string;
-  iconUrl: string;
-  unlockedAt?: Date;
-  progress: number;
-  maxProgress: number;
-  xpReward: number;
-  rarity: 'common' | 'rare' | 'epic' | 'legendary';
-}
-
-export type AchievementType = 
-  | 'lesson_completion'
-  | 'skill_mastery'
-  | 'streak_milestone'
-  | 'artwork_creation'
-  | 'social_engagement'
-  | 'challenge_winner';
-
-// --- Learning Types ---
-
-export interface LessonState {
-  lessonId: string;
-  startedAt: Date;
-  theoryProgress: {
-    currentSegment: number;
-    completedSegments: number[];
-    timeSpent: number;
-  };
-  practiceProgress: {
-    currentStep: number;
-    completedSteps: number[];
-    attempts: Record<number, Array<{ score: number; timestamp: Date }>>;
-    hints: string[];
-    timeSpent: number;
-  };
-  overallProgress: number;
-  isPaused: boolean;
-  pausedAt?: Date;
-}
-
-export interface LessonProgress {
-  lessonId: string;
   completed: boolean;
-  completedAt?: Date;
-  bestScore: number;
-  attempts: number;
-  totalTimeSpent: number;
-  xpEarned: number;
+  required: boolean;
+}
+
+export interface TheoryContent {
+  type: 'text' | 'image' | 'video' | 'interactive';
+  content: string;
+  duration?: number;
+  interactive?: boolean;
+}
+
+export interface PracticeStep {
+  id: string;
+  instruction: string;
+  type: 'draw' | 'observe' | 'compare' | 'trace';
+  hint?: string;
+  expectedResult?: string;
+  validation?: {
+    type: 'stroke-count' | 'shape-accuracy' | 'color-match' | 'proportion';
+    criteria: any;
+  };
+}
+
+export interface AssessmentCriteria {
+  id: string;
+  name: string;
+  description: string;
+  weight: number;
+  passingScore: number;
 }
 
 export interface Lesson {
   id: string;
-  skillTreeId: string;
   title: string;
   description: string;
-  thumbnailUrl: string;
-  duration: number; // in minutes
-  difficulty: 1 | 2 | 3 | 4 | 5;
+  type: LessonType;
+  skillTree: string;
   order: number;
+  estimatedTime: number;
+  difficulty: number;
   prerequisites: string[];
-  objectives: LearningObjective[];
-  theoryContent: TheoryContent;
-  practiceContent: PracticeContent;
-  assessment: Assessment;
-  xpReward: number;
-  unlockRequirements: UnlockRequirement[];
-  tags: string[];
-}
-
-export interface LearningObjective {
-  id: string;
-  description: string;
-  completed: boolean;
-}
-
-export interface TheoryContent {
-  segments: TheorySegment[];
-  estimatedDuration: number;
-}
-
-export interface TheorySegment {
-  type: 'text' | 'image' | 'video' | 'interactive';
-  content: any;
-  duration: number;
-}
-
-export interface PracticeContent {
-  instructions: PracticeInstruction[];
-  referenceImage?: string;
-  guideLayers: GuideLayer[];
-  hints: Hint[];
-  toolsRequired: string[];
-  estimatedDuration: number;
-}
-
-export interface PracticeInstruction {
-  step: number;
-  text: string;
-  highlightArea?: Rectangle;
-  requiredAction: string;
-  validation?: ValidationRule;
-}
-
-export interface GuideLayer {
-  id: string;
-  type: 'grid' | 'reference' | 'overlay';
-  visible: boolean;
-  opacity: number;
-  data: any;
-}
-
-export interface Hint {
-  id: string;
-  triggerCondition: string;
-  content: string;
-  type: 'tip' | 'correction' | 'encouragement';
-}
-
-export interface Assessment {
-  criteria: AssessmentCriterion[];
-  passingScore: number;
-  bonusObjectives: BonusObjective[];
-}
-
-export interface AssessmentCriterion {
-  id: string;
-  description: string;
-  weight: number;
-  evaluationType: 'automatic' | 'self' | 'peer';
-}
-
-export interface BonusObjective {
-  id: string;
-  description: string;
-  xpBonus: number;
-}
-
-export interface UnlockRequirement {
-  type: 'level' | 'xp' | 'lesson' | 'achievement';
-  value: any;
+  objectives: LessonObjective[];
+  theory?: {
+    content: TheoryContent[];
+    duration: number;
+  };
+  practice?: {
+    steps: PracticeStep[];
+    canvas: {
+      width: number;
+      height: number;
+      backgroundColor: string;
+      referenceImage?: string;
+    };
+    expectedDuration: number;
+  };
+  assessment?: {
+    criteria: AssessmentCriteria[];
+    passingScore: number;
+    maxAttempts: number;
+  };
+  rewards: {
+    xp: number;
+    achievements: string[];
+    unlocks: string[];
+  };
+  status: LessonStatus;
+  progress: number;
+  completedAt?: number;
+  attempts: number;
+  bestScore?: number;
+  timeSpent: number;
 }
 
 export interface SkillTree {
   id: string;
   name: string;
   description: string;
-  iconUrl: string;
-  category: SkillCategory;
+  category: string;
+  order: number;
   lessons: Lesson[];
+  prerequisites: string[];
   totalXP: number;
-  completionPercentage: number;
+  estimatedDuration: number;
+  difficultyLevel: SkillLevel;
+  progress: number;
+  unlockedAt?: number;
+  completedAt?: number;
 }
 
-export type SkillCategory = 
-  | 'fundamentals'
-  | 'techniques'
-  | 'styles'
-  | 'digital_tools'
-  | 'traditional_media'
-  | 'specialized';
+export interface LearningPath {
+  id: string;
+  name: string;
+  description: string;
+  skillTrees: string[];
+  targetSkillLevel: SkillLevel;
+  estimatedWeeks: number;
+  prerequisites: SkillLevel[];
+}
 
-// --- Progress Types ---
+export interface LearningState {
+  currentLesson: Lesson | null;
+  currentSkillTree: SkillTree | null;
+  availableLessons: Lesson[];
+  completedLessons: string[];
+  learningPaths: LearningPath[];
+  skillTrees: SkillTree[];
+  dailyGoal: {
+    target: number;
+    completed: number;
+    streak: number;
+  };
+  weeklyProgress: {
+    lessonsCompleted: number;
+    timeSpent: number;
+    xpGained: number;
+  };
+  preferences: {
+    reminderTime?: string;
+    difficultyPreference: 'adaptive' | 'challenging' | 'comfortable';
+    learningStyle: 'visual' | 'kinesthetic' | 'mixed';
+  };
+}
 
-export interface LearningProgress {
+// ========================== USER TYPES ==========================
+
+export interface UserProfile {
+  id: string;
+  displayName: string;
+  email: string;
+  avatar?: string;
+  joinedAt: number;
+  lastActiveAt: number;
+  skillLevel: SkillLevel;
+  learningGoals: string[];
+  preferences: {
+    theme: 'light' | 'dark' | 'auto';
+    notifications: boolean;
+    privacy: 'public' | 'friends' | 'private';
+  };
+  stats: {
+    totalDrawingTime: number;
+    totalLessonsCompleted: number;
+    totalArtworksCreated: number;
+    currentStreak: number;
+    longestStreak: number;
+  };
+}
+
+export interface UserProgress {
   userId: string;
-  currentLesson?: string;
-  completedLessons: string[];
-  skillTrees: SkillTreeProgress[];
-  totalXP: number;
-  currentStreak: number;
-  longestStreak: number;
-  dailyGoal: number;
-  dailyProgress: number;
+  level: number;
+  xp: number;
+  xpToNextLevel: number;
+  skillPoints: {
+    drawing: number;
+    theory: number;
+    creativity: number;
+    technique: number;
+  };
+  achievements: Achievement[];
+  streakDays: number;
+  lastActivityDate: string;
+  learningStats: {
+    lessonsCompleted: number;
+    skillTreesCompleted: number;
+    totalStudyTime: number;
+    averageSessionTime: number;
+    strongestSkills: string[];
+    improvementAreas: string[];
+  };
 }
 
-export interface SkillTreeProgress {
-  skillTreeId: string;
-  unlockedLessons: string[];
-  completedLessons: string[];
-  totalXpEarned: number;
-  lastAccessedAt: Date;
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  category: 'skill' | 'social' | 'milestone' | 'streak' | 'creativity';
+  requirements: {
+    type: string;
+    value: number;
+    condition?: string;
+  };
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  xpReward: number;
+  unlockedAt?: number;
+  progress?: number;
 }
 
-// FIXED: Extended ValidationRule types to match SkillTreeManager usage
-export interface ValidationRule {
-  type: 'stroke_count' | 'color_match' | 'shape_accuracy' | 'completion' | 
-        'shape_construction' | 'line_detection' | 'point_placement' | 'perspective_lines' |
-        'shape_completion' | 'shading_element' | 'shading_gradation' | 'cast_shadow' |
-        'cylindrical_shading' | 'form_construction';
-  params: any;
-  threshold: number;
+export interface Portfolio {
+  id: string;
+  userId: string;
+  artworks: Artwork[];
+  collections: Collection[];
+  stats: {
+    totalArtworks: number;
+    totalLikes: number;
+    totalViews: number;
+    followerCount: number;
+  };
+  settings: {
+    publicProfile: boolean;
+    showProgress: boolean;
+    allowComments: boolean;
+  };
 }
 
-// --- Performance Monitoring ---
+export interface Artwork {
+  id: string;
+  userId: string;
+  title: string;
+  description?: string;
+  tags: string[];
+  lessonId?: string;
+  skillTree?: string;
+  drawingData: DrawingState;
+  thumbnail: string;
+  imageUrl: string;
+  createdAt: number;
+  updatedAt: number;
+  stats: {
+    views: number;
+    likes: number;
+    comments: number;
+    shares: number;
+  };
+  metadata: {
+    drawingTime: number;
+    strokeCount: number;
+    layersUsed: number;
+    brushesUsed: string[];
+    canvasSize: { width: number; height: number };
+  };
+  visibility: 'public' | 'unlisted' | 'private';
+  featured: boolean;
+}
+
+export interface Collection {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  artworkIds: string[];
+  coverImageId?: string;
+  createdAt: number;
+  updatedAt: number;
+  visibility: 'public' | 'unlisted' | 'private';
+}
+
+// ========================== COMMUNITY TYPES ==========================
+
+export interface Challenge {
+  id: string;
+  title: string;
+  description: string;
+  type: 'daily' | 'weekly' | 'monthly' | 'special';
+  theme: string;
+  prompt: string;
+  rules: string[];
+  startDate: number;
+  endDate: number;
+  difficulty: SkillLevel;
+  rewards: {
+    xp: number;
+    achievements: string[];
+    badges: string[];
+  };
+  participants: number;
+  submissions: ChallengeSubmission[];
+  featured: boolean;
+  tags: string[];
+}
+
+export interface ChallengeSubmission {
+  id: string;
+  challengeId: string;
+  userId: string;
+  artworkId: string;
+  submittedAt: number;
+  votes: number;
+  rank?: number;
+  featured: boolean;
+}
+
+export interface SocialFeed {
+  posts: FeedPost[];
+  hasMore: boolean;
+  lastUpdated: number;
+}
+
+export interface FeedPost {
+  id: string;
+  userId: string;
+  type: 'artwork' | 'achievement' | 'lesson-complete' | 'challenge' | 'milestone';
+  content: {
+    artworkId?: string;
+    achievementId?: string;
+    lessonId?: string;
+    challengeId?: string;
+    text?: string;
+  };
+  createdAt: number;
+  engagement: {
+    likes: number;
+    comments: number;
+    shares: number;
+    isLiked: boolean;
+  };
+}
+
+export interface Comment {
+  id: string;
+  userId: string;
+  content: string;
+  createdAt: number;
+  likes: number;
+  replies: Comment[];
+  isLiked: boolean;
+}
+
+// ========================== PERFORMANCE TYPES ==========================
 
 export interface PerformanceMetrics {
   fps: number;
@@ -348,178 +508,178 @@ export interface PerformanceMetrics {
   renderTime: number;
 }
 
-// --- Error Handling Types ---
-
-export interface AppError {
+export interface ErrorInfo {
   code: string;
   message: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   context?: any;
   timestamp: Date;
   userId?: string;
+  sessionId?: string;
+  deviceInfo?: {
+    platform: string;
+    version: string;
+    model: string;
+  };
 }
 
-// --- Navigation Types ---
+// ========================== THEME TYPES ==========================
 
-export type RootStackParamList = {
-  Home: undefined;
-  Drawing: { lessonId?: string; artworkId?: string };
-  Lesson: { lessonId: string };
-  Profile: { userId?: string };
-  Gallery: { userId?: string };
-  Challenge: { challengeId: string };
-  Settings: undefined;
-  Onboarding: undefined;
-};
-
-// --- Artwork/Challenge Types ---
-
-export interface Artwork {
-  id: string;
-  userId: string;
-  title: string;
-  description?: string;
-  thumbnailUrl: string;
-  fullImageUrl: string;
-  lessonId?: string;
-  challengeId?: string;
-  layers: Layer[];
-  dimensions: Dimensions;
-  createdAt: Date;
-  updatedAt: Date;
-  likes: number;
-  views: number;
-  comments: Comment[];
-  tags: string[];
-  isPublic: boolean;
-  tools: string[];
-  duration: number; // time spent in seconds
+export interface Theme {
+  name: 'light' | 'dark';
+  colors: {
+    primary: string;
+    primaryDark: string;
+    secondary: string;
+    background: string;
+    surface: string;
+    text: string;
+    textSecondary: string;
+    border: string;
+    error: string;
+    warning: string;
+    success: string;
+    info: string;
+  };
+  spacing: {
+    xs: number;
+    sm: number;
+    md: number;
+    lg: number;
+    xl: number;
+  };
+  borderRadius: {
+    sm: number;
+    md: number;
+    lg: number;
+    xl: number;
+  };
+  typography: {
+    h1: { fontSize: number; fontWeight: string; lineHeight: number };
+    h2: { fontSize: number; fontWeight: string; lineHeight: number };
+    h3: { fontSize: number; fontWeight: string; lineHeight: number };
+    body: { fontSize: number; fontWeight: string; lineHeight: number };
+    caption: { fontSize: number; fontWeight: string; lineHeight: number };
+  };
 }
 
-export interface Dimensions {
-  width: number;
-  height: number;
-  dpi: number;
+// ========================== CONTEXT TYPES ==========================
+
+export interface ThemeContextValue {
+  theme: Theme;
+  colors: Theme['colors'];
+  spacing: Theme['spacing'];
+  borderRadius: Theme['borderRadius'];
+  toggleTheme: () => void;
+  isDark: boolean;
 }
 
-export interface Comment {
-  id: string;
-  userId: string;
-  text: string;
-  createdAt: Date;
-  likes: number;
-  replies: Comment[];
+export interface UserProgressContextValue {
+  user: UserProfile | null;
+  progress: UserProgress | null;
+  portfolio: Portfolio | null;
+  isLoading: boolean;
+  error: string | null;
+  
+  // User management
+  createUser: (profile: Partial<UserProfile>) => Promise<void>;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  deleteAccount: () => Promise<void>;
+  
+  // Progress management
+  addXP: (amount: number, source?: string) => void;
+  addAchievement: (achievementId: string) => void;
+  updateStreak: () => void;
+  checkDailyStreak: () => void;
+  
+  // Portfolio management
+  saveArtwork: (artwork: Omit<Artwork, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<string>;
+  updateArtwork: (artworkId: string, updates: Partial<Artwork>) => Promise<void>;
+  deleteArtwork: (artworkId: string) => Promise<void>;
+  createCollection: (collection: Omit<Collection, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<string>;
+  
+  // Stats and analytics
+  getDailyGoalProgress: () => number;
+  getWeeklyStats: () => any;
+  getLearningInsights: () => any;
 }
 
-export interface Challenge {
-  id: string;
-  title: string;
-  description: string;
-  type: 'daily' | 'weekly' | 'special';
-  startDate: Date;
-  endDate: Date;
-  theme: string;
-  requirements: string[];
-  prizes: Prize[];
-  participants: number;
-  submissions: Artwork[];
-  winners?: string[];
+export interface LearningContextValue {
+  state: LearningState;
+  
+  // Lesson management
+  startLesson: (lessonId: string) => Promise<void>;
+  completeLesson: (lessonId: string, score?: number) => Promise<void>;
+  updateLessonProgress: (lessonId: string, progress: number) => void;
+  
+  // Skill tree management
+  getAvailableLessons: (skillTreeId?: string) => Lesson[];
+  getRecommendedLessons: () => Lesson[];
+  unlockLesson: (lessonId: string) => void;
+  
+  // Progress tracking
+  getLearningProgress: () => any;
+  getSkillTreeProgress: (skillTreeId: string) => number;
+  updateDailyGoal: (target: number) => void;
+  
+  // Learning path management
+  startLearningPath: (pathId: string) => void;
+  getPersonalizedPath: () => LearningPath;
 }
 
-export interface Prize {
-  place: number;
-  xpReward: number;
-  achievementId?: string;
-  description: string;
+// ========================== API TYPES ==========================
+
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
 }
 
-// --- Brush/Tool Types ---
-
-export interface Brush {
-  id: string;
-  name: string;
-  category: BrushCategory;
-  icon: string;
-  settings: BrushSettings;
-  pressureCurve: number[];
-  tiltSupport: boolean;
-  customizable: boolean;
+export interface PaginatedResponse<T = any> extends ApiResponse<T[]> {
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    hasMore: boolean;
+  };
 }
 
-export type BrushCategory = 
-  | 'pencil'
-  | 'ink'
-  | 'paint'
-  | 'watercolor'
-  | 'marker'
-  | 'airbrush'
-  | 'texture'
-  | 'special';
+// ========================== EVENT TYPES ==========================
 
-// FIXED: BrushSettings - Made compatible with both number and RangeValue usage
-export interface BrushSettings {
-  size: number; // Changed from RangeValue to number for simplicity
-  minSize: number;
-  maxSize: number;
-  opacity: number; // Changed from RangeValue to number for simplicity
-  flow: number; // Changed from RangeValue to number for simplicity
-  hardness: number; // Changed from RangeValue to number for simplicity
-  spacing: number; // Changed from RangeValue to number for simplicity
-  scatter?: number; // Changed from RangeValue to number for simplicity
-  texture?: string;
-  mixMode?: 'normal' | 'wet' | 'multiply';
-  smoothing: number;
-  pressureSensitivity?: number; // Added for Apple Pencil support
+export interface AppEvent {
+  type: string;
+  payload: any;
+  timestamp: number;
+  userId?: string;
 }
 
-// Keep RangeValue for settings UI where it's needed
-export interface RangeValue {
-  min: number;
-  max: number;
-  default: number;
-  current: number;
+export interface DrawingEvent extends AppEvent {
+  type: 'stroke:start' | 'stroke:add' | 'stroke:end' | 'layer:add' | 'layer:delete' | 'canvas:clear';
+  payload: {
+    strokeId?: string;
+    layerId?: string;
+    point?: Point;
+    stroke?: Stroke;
+  };
 }
 
-export interface Color {
-  hex: string;
-  rgb: { r: number; g: number; b: number };
-  hsb: { h: number; s: number; b: number };
-  alpha: number;
+export interface LearningEvent extends AppEvent {
+  type: 'lesson:start' | 'lesson:complete' | 'skill:unlock' | 'achievement:earn';
+  payload: {
+    lessonId?: string;
+    skillId?: string;
+    achievementId?: string;
+    score?: number;
+    timeSpent?: number;
+  };
 }
 
-export interface HistoryEntry {
-  id: string;
-  action: string;
-  timestamp: Date;
-  data: any;
-}
-
-export interface Selection {
-  type: 'rectangle' | 'ellipse' | 'lasso' | 'magic';
-  bounds: Rectangle;
-  mask?: ImageData;
-}
-
-export interface Rectangle {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-// --- Typography Types for UI ---
-export interface TypographyStyle {
-  fontSize: number;
-  fontWeight: 'normal' | 'bold' | '100' | '200' | '300' | '400' | '500' | '600' | '700' | '800' | '900';
-  lineHeight?: number;
-  letterSpacing?: number;
-}
-
-export interface Typography {
-  h1: TypographyStyle;
-  h2: TypographyStyle;
-  h3: TypographyStyle;
-  h4: TypographyStyle;
-  body: TypographyStyle;
-  caption: TypographyStyle;
+export interface UserEvent extends AppEvent {
+  type: 'user:register' | 'user:login' | 'user:logout' | 'artwork:save' | 'artwork:share';
+  payload: {
+    userId?: string;
+    artworkId?: string;
+    platform?: string;
+  };
 }

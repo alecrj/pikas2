@@ -8,7 +8,8 @@ import {
   Brush,
   DrawingMode,
   CanvasSettings,
-  DrawingStats
+  DrawingStats,
+  HistoryEntry,
 } from '../types';
 import { brushEngine } from '../engines/drawing/BrushEngine';
 import { dataManager } from '../engines/core/DataManager';
@@ -37,7 +38,7 @@ type DrawingAction =
   | { type: 'SET_REFERENCE_IMAGE'; imageUri: string | null }
   | { type: 'SET_REFERENCE_OPACITY'; opacity: number }
   | { type: 'SET_DRAWING_MODE'; mode: DrawingMode }
-  | { type: 'ADD_TO_HISTORY'; state: DrawingState }
+  | { type: 'ADD_TO_HISTORY'; state: HistoryEntry }
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'UPDATE_STATS'; stats: Partial<DrawingStats> }
@@ -57,7 +58,7 @@ const initialState: DrawingState = {
     hsb: { h: 0, s: 0, b: 0 },
     alpha: 1,
   },
-  currentBrush: null,
+  currentBrush: null, // Will be set when brush engine initializes
   brushSize: 3,
   opacity: 1,
   layers: [],
@@ -256,10 +257,13 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
       
     case 'UNDO':
       if (state.historyIndex > 0) {
-        const previousState = state.history[state.historyIndex - 1];
+        const previousEntry = state.history[state.historyIndex - 1];
         eventBus.emit('drawing:undo');
         return {
-          ...previousState,
+          ...state,
+          // Apply the previous state data
+          ...previousEntry.data,
+          // Keep current history and decrement index
           history: state.history,
           historyIndex: state.historyIndex - 1,
           stats: {
@@ -272,10 +276,13 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
       
     case 'REDO':
       if (state.historyIndex < state.history.length - 1) {
-        const nextState = state.history[state.historyIndex + 1];
+        const nextEntry = state.history[state.historyIndex + 1];
         eventBus.emit('drawing:redo');
         return {
-          ...nextState,
+          ...state,
+          // Apply the next state data
+          ...nextEntry.data,
+          // Keep current history and increment index
           history: state.history,
           historyIndex: state.historyIndex + 1,
           stats: {
@@ -455,7 +462,18 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
   
   const clearCanvas = () => {
     // Save current state to history before clearing
-    dispatch({ type: 'ADD_TO_HISTORY', state });
+    const historyEntry: HistoryEntry = {
+      id: `clear_${Date.now()}`,
+      action: 'clear_canvas',
+      timestamp: Date.now(),
+      data: {
+        strokes: state.strokes,
+        layers: state.layers,
+        activeLayerId: state.activeLayerId,
+      }
+    };
+    
+    dispatch({ type: 'ADD_TO_HISTORY', state: historyEntry });
     
     // Reset drawing state but keep settings
     const clearedState: Partial<DrawingState> = {
