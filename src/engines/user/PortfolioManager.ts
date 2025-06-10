@@ -1,23 +1,50 @@
-import { Artwork, Layer, Dimensions } from '../../types';
-import { dataManager } from '../core/DataManager';
+import { Artwork, Layer, Collection } from '../../types';
+import { EventBus } from '../core/EventBus';
 import { errorHandler } from '../core/ErrorHandler';
-import { progressionSystem } from './ProgressionSystem';
-import { profileSystem } from './ProfileSystem';
+import { dataManager } from '../core/DataManager';
+
+interface Portfolio {
+  id: string;
+  userId: string;
+  artworks: Artwork[];
+  collections: Collection[];
+  stats: {
+    totalArtworks: number;
+    publicArtworks: number;
+    totalLikes: number;
+    totalViews: number;
+    averageTimeSpent: number;
+  };
+  settings: {
+    publicProfile: boolean;
+    showProgress: boolean;
+    allowComments: boolean;
+  };
+}
 
 /**
- * Portfolio Manager - Handles artwork storage, organization, and sharing
- * Manages the user's creative portfolio with efficient storage and retrieval
+ * Portfolio Manager - Manages user artwork collections and galleries
+ * Handles artwork storage, organization, and portfolio analytics
  */
 export class PortfolioManager {
   private static instance: PortfolioManager;
-  private artworkCache: Map<string, Artwork> = new Map();
-  public portfolioListeners: Set<(artworks: Artwork[]) => void> = new Set();
+  private eventBus: EventBus = EventBus.getInstance();
   
-  private readonly MAX_ARTWORK_SIZE = 10 * 1024 * 1024; // 10MB per artwork
-  private readonly THUMBNAIL_SIZE = { width: 400, height: 400 };
+  // Portfolio storage
+  private portfolios: Map<string, Portfolio> = new Map();
+  private artworks: Map<string, Artwork> = new Map();
+  
+  // Analytics
+  private artworkAnalytics: Map<string, {
+    views: number;
+    likes: number;
+    comments: number;
+    shares: number;
+    averageViewTime: number;
+  }> = new Map();
   
   private constructor() {
-    this.loadArtworksFromStorage();
+    this.loadPortfolios();
   }
 
   public static getInstance(): PortfolioManager {
@@ -27,383 +54,509 @@ export class PortfolioManager {
     return PortfolioManager.instance;
   }
 
-  private async loadArtworksFromStorage(): Promise<void> {
-    try {
-      const artworks = await dataManager.getAllArtworks();
-      artworks.forEach(artwork => {
-        this.artworkCache.set(artwork.id, artwork);
-      });
-      this.notifyListeners();
-    } catch (error) {
-      errorHandler.handleError(
-        errorHandler.createError('PORTFOLIO_LOAD_ERROR', 'Failed to load portfolio', 'medium', error)
-      );
-    }
+  // ---- PUBLIC API ----
+
+  public createPortfolio(userId: string): Portfolio {
+    const portfolio: Portfolio = {
+      id: `portfolio_${userId}`,
+      userId,
+      artworks: [],
+      collections: [],
+      stats: {
+        totalArtworks: 0,
+        publicArtworks: 0,
+        totalLikes: 0,
+        totalViews: 0,
+        averageTimeSpent: 0,
+      },
+      settings: {
+        publicProfile: true,
+        showProgress: true,
+        allowComments: true,
+      },
+    };
+    
+    this.portfolios.set(userId, portfolio);
+    this.savePortfolios();
+    
+    this.eventBus.emit('portfolio:created', { portfolio });
+    return portfolio;
   }
 
-  public async createArtwork(params: {
-    title: string;
-    description?: string;
-    layers: Layer[];
-    dimensions: Dimensions;
-    lessonId?: string;
-    challengeId?: string;
-    duration: number;
-    tools: string[];
-  }): Promise<Artwork> {
-    const user = profileSystem.getCurrentUser();
-    if (!user) {
-      throw new Error('No user logged in');
+  public getUserPortfolio(userId: string): Portfolio | null {
+    return this.portfolios.get(userId) || null;
+  }
+
+  public addArtwork(userId: string, artworkData: Omit<Artwork, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Artwork {
+    const portfolio = this.portfolios.get(userId);
+    if (!portfolio) {
+      throw new Error('Portfolio not found');
     }
 
     const artwork: Artwork = {
-      id: this.generateArtworkId(),
-      userId: user.id,
-      title: params.title,
-      description: params.description,
-      thumbnailUrl: '', // Will be generated
-      fullImageUrl: '', // Will be generated
-      lessonId: params.lessonId,
-      challengeId: params.challengeId,
-      layers: params.layers,
-      dimensions: params.dimensions,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      likes: 0,
-      views: 0,
-      comments: [],
-      tags: this.generateTags(params),
-      isPublic: false,
-      tools: params.tools,
-      duration: params.duration,
+      ...artworkData,
+      id: `artwork_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      userId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      stats: artworkData.stats || {
+        views: 0,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+      },
+      metadata: artworkData.metadata || {
+        drawingTime: 0,
+        strokeCount: 0,
+        layersUsed: 0,
+        brushesUsed: [],
+        canvasSize: { width: 1024, height: 768 },
+      },
     };
 
-    // Generate images
-    await this.generateArtworkImages(artwork);
+    // Generate thumbnail
+    artwork.thumbnail = artwork.thumbnail || `thumbnail_${artwork.id}`;
+    artwork.imageUrl = artwork.imageUrl || `full_${artwork.id}`;
 
-    // Save to storage
-    await this.saveArtwork(artwork);
+    // Store artwork
+    this.artworks.set(artwork.id, artwork);
+    portfolio.artworks.push(artwork);
+    
+    // Update portfolio stats
+    portfolio.stats.totalArtworks++;
+    if (artwork.visibility === 'public') {
+      portfolio.stats.publicArtworks++;
+    }
 
-    // Update progression
-    await progressionSystem.recordArtworkCreation(artwork.id);
+    // Initialize analytics
+    this.artworkAnalytics.set(artwork.id, {
+      views: 0,
+      likes: 0,
+      comments: 0,
+      shares: 0,
+      averageViewTime: 0,
+    });
+
+    this.savePortfolios();
+    this.eventBus.emit('artwork:created', { artwork, userId });
 
     return artwork;
   }
 
-  private async generateArtworkImages(artwork: Artwork): Promise<void> {
-    // In a real implementation, this would:
-    // 1. Flatten layers into a single image
-    // 2. Generate thumbnail
-    // 3. Save full resolution image
-    // 4. Upload to cloud storage
-    
-    // For now, we'll use placeholder URLs
-    artwork.thumbnailUrl = `thumbnail_${artwork.id}`;
-    artwork.fullImageUrl = `full_${artwork.id}`;
-  }
+  public updateArtwork(artworkId: string, updates: Partial<Artwork>): Artwork | null {
+    const artwork = this.artworks.get(artworkId);
+    if (!artwork) return null;
 
-  private generateTags(params: any): string[] {
-    const tags: string[] = [];
-    
-    // Add tool tags
-    tags.push(...params.tools);
-    
-    // Add lesson/challenge tags
-    if (params.lessonId) {
-      tags.push('lesson-work');
-    }
-    if (params.challengeId) {
-      tags.push('challenge-entry');
-    }
-    
-    // Add time-based tags
-    const minutes = Math.floor(params.duration / 60);
-    if (minutes < 5) {
-      tags.push('quick-sketch');
-    } else if (minutes < 30) {
-      tags.push('study');
-    } else {
-      tags.push('detailed-work');
-    }
-    
-    return tags;
-  }
-
-  private async saveArtwork(artwork: Artwork): Promise<void> {
-    // Validate size
-    const size = this.estimateArtworkSize(artwork);
-    if (size > this.MAX_ARTWORK_SIZE) {
-      throw new Error('Artwork size exceeds maximum allowed');
-    }
-
-    // Add to cache
-    this.artworkCache.set(artwork.id, artwork);
-
-    // Save to storage
-    await dataManager.saveArtwork(artwork.id, artwork);
-
-    // Notify listeners
-    this.notifyListeners();
-  }
-
-  private estimateArtworkSize(artwork: Artwork): number {
-    // Rough estimation based on layers and dimensions
-    let size = 0;
-    artwork.layers.forEach(layer => {
-      if (layer.type === 'raster') {
-        // 4 bytes per pixel (RGBA)
-        size += artwork.dimensions.width * artwork.dimensions.height * 4;
-      }
+    // Update artwork
+    Object.assign(artwork, updates, {
+      updatedAt: Date.now(),
     });
-    return size;
+
+    // Update portfolio stats if visibility changed
+    if (updates.visibility) {
+      const portfolio = this.portfolios.get(artwork.userId);
+      if (portfolio) {
+        const wasPublic = artwork.visibility === 'public';
+        const isPublic = updates.visibility === 'public';
+        
+        if (wasPublic && !isPublic) {
+          portfolio.stats.publicArtworks--;
+        } else if (!wasPublic && isPublic) {
+          portfolio.stats.publicArtworks++;
+        }
+      }
+    }
+
+    this.savePortfolios();
+    this.eventBus.emit('artwork:updated', { artwork });
+
+    return artwork;
   }
 
-  public async updateArtwork(artworkId: string, updates: Partial<Artwork>): Promise<Artwork> {
-    const artwork = await this.getArtwork(artworkId);
-    if (!artwork) {
-      throw new Error('Artwork not found');
+  public deleteArtwork(artworkId: string): boolean {
+    const artwork = this.artworks.get(artworkId);
+    if (!artwork) return false;
+
+    const portfolio = this.portfolios.get(artwork.userId);
+    if (!portfolio) return false;
+
+    // Remove from portfolio
+    portfolio.artworks = portfolio.artworks.filter(a => a.id !== artworkId);
+    
+    // Update stats
+    portfolio.stats.totalArtworks--;
+    if (artwork.visibility === 'public') {
+      portfolio.stats.publicArtworks--;
     }
-
-    const user = profileSystem.getCurrentUser();
-    if (artwork.userId !== user?.id) {
-      throw new Error('Unauthorized to update this artwork');
-    }
-
-    const updatedArtwork: Artwork = {
-      ...artwork,
-      ...updates,
-      updatedAt: new Date(),
-    };
-
-    await this.saveArtwork(updatedArtwork);
-    return updatedArtwork;
-  }
-
-  public async deleteArtwork(artworkId: string): Promise<void> {
-    const artwork = await this.getArtwork(artworkId);
-    if (!artwork) {
-      throw new Error('Artwork not found');
-    }
-
-    const user = profileSystem.getCurrentUser();
-    if (artwork.userId !== user?.id) {
-      throw new Error('Unauthorized to delete this artwork');
-    }
-
-    // Remove from cache
-    this.artworkCache.delete(artworkId);
 
     // Remove from storage
-    const allArtworks = await dataManager.get<Record<string, Artwork>>('artworks') || {};
-    delete allArtworks[artworkId];
-    await dataManager.set('artworks', allArtworks);
+    this.artworks.delete(artworkId);
+    this.artworkAnalytics.delete(artworkId);
 
-    // Notify listeners
-    this.notifyListeners();
+    // Remove from collections
+    portfolio.collections.forEach(collection => {
+      collection.artworkIds = collection.artworkIds.filter(id => id !== artworkId);
+    });
+
+    this.savePortfolios();
+    this.eventBus.emit('artwork:deleted', { artworkId, userId: artwork.userId });
+
+    return true;
   }
 
-  public async getArtwork(artworkId: string): Promise<Artwork | null> {
-    // Check cache first
-    if (this.artworkCache.has(artworkId)) {
-      return this.artworkCache.get(artworkId)!;
-    }
-
-    // Load from storage
-    const artwork = await dataManager.getArtwork(artworkId);
-    if (artwork) {
-      this.artworkCache.set(artworkId, artwork);
-    }
-    return artwork;
+  public getArtwork(artworkId: string): Artwork | null {
+    return this.artworks.get(artworkId) || null;
   }
 
-  public getUserArtworks(userId?: string): Artwork[] {
-    const targetUserId = userId || profileSystem.getCurrentUser()?.id;
-    if (!targetUserId) return [];
-
-    return Array.from(this.artworkCache.values())
-      .filter(artwork => artwork.userId === targetUserId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  public getUserArtworks(userId: string): Artwork[] {
+    const portfolio = this.portfolios.get(userId);
+    return portfolio ? portfolio.artworks : [];
   }
 
-  public getPublicArtworks(): Artwork[] {
-    return Array.from(this.artworkCache.values())
-      .filter(artwork => artwork.isPublic)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  public getRecentArtworks(userId: string, limit: number = 10): Artwork[] {
+    const artworks = this.getUserArtworks(userId);
+    return artworks
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
   }
 
-  public getArtworksByLesson(lessonId: string): Artwork[] {
-    return Array.from(this.artworkCache.values())
-      .filter(artwork => artwork.lessonId === lessonId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  public getPublicArtworks(userId: string): Artwork[] {
+    const artworks = this.getUserArtworks(userId);
+    return artworks
+      .filter(artwork => artwork.visibility === 'public')
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public getFeaturedArtworks(limit: number = 10): Artwork[] {
+    const allArtworks = Array.from(this.artworks.values());
+    return allArtworks
+      .filter(artwork => artwork.featured && artwork.visibility === 'public')
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, limit);
   }
 
   public getArtworksByChallenge(challengeId: string): Artwork[] {
-    return Array.from(this.artworkCache.values())
+    const allArtworks = Array.from(this.artworks.values());
+    return allArtworks
       .filter(artwork => artwork.challengeId === challengeId)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      .sort((a, b) => b.createdAt - a.createdAt);
   }
 
-  public async shareArtwork(artworkId: string): Promise<void> {
-    const artwork = await this.getArtwork(artworkId);
-    if (!artwork) {
-      throw new Error('Artwork not found');
+  public makeArtworkPublic(artworkId: string): boolean {
+    const artwork = this.artworks.get(artworkId);
+    if (!artwork) return false;
+
+    artwork.visibility = 'public';
+    this.updateArtwork(artworkId, { visibility: 'public' });
+    
+    this.eventBus.emit('artwork:public', { artwork });
+    return true;
+  }
+
+  public makeArtworkPrivate(artworkId: string): boolean {
+    const artwork = this.artworks.get(artworkId);
+    if (!artwork) return false;
+
+    artwork.visibility = 'private';
+    this.updateArtwork(artworkId, { visibility: 'private' });
+    
+    this.eventBus.emit('artwork:private', { artwork });
+    return true;
+  }
+
+  public recordArtworkView(artworkId: string, userId: string): void {
+    const artwork = this.artworks.get(artworkId);
+    if (!artwork) return;
+
+    const analytics = this.artworkAnalytics.get(artworkId);
+    if (analytics) {
+      analytics.views++;
+      artwork.stats.views++;
     }
 
-    artwork.isPublic = true;
-    await this.saveArtwork(artwork);
-
-    // Update progression
-    await progressionSystem.recordArtworkShared(artworkId);
+    this.eventBus.emit('artwork:viewed', { artworkId, userId });
   }
 
-  public async unshareArtwork(artworkId: string): Promise<void> {
-    const artwork = await this.getArtwork(artworkId);
-    if (!artwork) {
-      throw new Error('Artwork not found');
+  public recordArtworkLike(artworkId: string, userId: string): void {
+    const artwork = this.artworks.get(artworkId);
+    if (!artwork) return;
+
+    const analytics = this.artworkAnalytics.get(artworkId);
+    if (analytics) {
+      analytics.likes++;
+      artwork.stats.likes++;
     }
 
-    artwork.isPublic = false;
-    await this.saveArtwork(artwork);
-  }
-
-  public async likeArtwork(artworkId: string): Promise<void> {
-    const artwork = await this.getArtwork(artworkId);
-    if (!artwork) {
-      throw new Error('Artwork not found');
+    const portfolio = this.portfolios.get(artwork.userId);
+    if (portfolio) {
+      portfolio.stats.totalLikes++;
     }
 
-    artwork.likes++;
-    await this.saveArtwork(artwork);
+    this.eventBus.emit('artwork:liked', { artworkId, userId });
   }
 
-  public async viewArtwork(artworkId: string): Promise<void> {
-    const artwork = await this.getArtwork(artworkId);
-    if (!artwork) {
-      throw new Error('Artwork not found');
+  public createCollection(userId: string, collectionData: Omit<Collection, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Collection {
+    const portfolio = this.portfolios.get(userId);
+    if (!portfolio) {
+      throw new Error('Portfolio not found');
     }
 
-    artwork.views++;
-    await this.saveArtwork(artwork);
+    const collection: Collection = {
+      ...collectionData,
+      id: `collection_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      userId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    portfolio.collections.push(collection);
+    
+    this.savePortfolios();
+    this.eventBus.emit('collection:created', { collection });
+
+    return collection;
   }
 
-  public subscribeToPortfolio(callback: (artworks: Artwork[]) => void): () => void {
-    this.portfolioListeners.add(callback);
-    callback(this.getUserArtworks()); // Immediate callback
-    return () => this.portfolioListeners.delete(callback);
+  public updateCollection(collectionId: string, updates: Partial<Collection>): Collection | null {
+    for (const portfolio of this.portfolios.values()) {
+      const collection = portfolio.collections.find(c => c.id === collectionId);
+      if (collection) {
+        Object.assign(collection, updates, {
+          updatedAt: Date.now(),
+        });
+        
+        this.savePortfolios();
+        this.eventBus.emit('collection:updated', { collection });
+        return collection;
+      }
+    }
+    return null;
   }
 
-  private notifyListeners(): void {
-    const artworks = this.getUserArtworks();
-    this.portfolioListeners.forEach(callback => callback(artworks));
+  public deleteCollection(collectionId: string): boolean {
+    for (const portfolio of this.portfolios.values()) {
+      const index = portfolio.collections.findIndex(c => c.id === collectionId);
+      if (index !== -1) {
+        const [collection] = portfolio.collections.splice(index, 1);
+        
+        this.savePortfolios();
+        this.eventBus.emit('collection:deleted', { collectionId });
+        return true;
+      }
+    }
+    return false;
   }
 
-  private generateArtworkId(): string {
-    return `artwork_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  public addToCollection(collectionId: string, artworkId: string): boolean {
+    const artwork = this.artworks.get(artworkId);
+    if (!artwork) return false;
+
+    for (const portfolio of this.portfolios.values()) {
+      const collection = portfolio.collections.find(c => c.id === collectionId);
+      if (collection && collection.userId === artwork.userId) {
+        if (!collection.artworkIds.includes(artworkId)) {
+          collection.artworkIds.push(artworkId);
+          collection.updatedAt = Date.now();
+          
+          this.savePortfolios();
+          this.eventBus.emit('collection:artwork_added', { collectionId, artworkId });
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
-  // Analytics and statistics
-  public getPortfolioStats(userId?: string): {
+  public removeFromCollection(collectionId: string, artworkId: string): boolean {
+    for (const portfolio of this.portfolios.values()) {
+      const collection = portfolio.collections.find(c => c.id === collectionId);
+      if (collection) {
+        const index = collection.artworkIds.indexOf(artworkId);
+        if (index !== -1) {
+          collection.artworkIds.splice(index, 1);
+          collection.updatedAt = Date.now();
+          
+          this.savePortfolios();
+          this.eventBus.emit('collection:artwork_removed', { collectionId, artworkId });
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  public getPortfolioStats(userId: string): {
     totalArtworks: number;
     publicArtworks: number;
     totalLikes: number;
     totalViews: number;
     averageTimeSpent: number;
-    mostUsedTools: string[];
-    favoriteTime: string;
+    mostUsedBrushes: string[];
+    favoriteColors: string[];
+    skillProgression: any[];
   } {
-    const artworks = this.getUserArtworks(userId);
-    
-    if (artworks.length === 0) {
+    const portfolio = this.portfolios.get(userId);
+    if (!portfolio) {
       return {
         totalArtworks: 0,
         publicArtworks: 0,
         totalLikes: 0,
         totalViews: 0,
         averageTimeSpent: 0,
-        mostUsedTools: [],
-        favoriteTime: 'Unknown',
+        mostUsedBrushes: [],
+        favoriteColors: [],
+        skillProgression: [],
       };
     }
 
+    const artworks = portfolio.artworks;
+    
+    // Calculate total stats
     const stats = {
-      totalArtworks: artworks.length,
-      publicArtworks: artworks.filter(a => a.isPublic).length,
-      totalLikes: artworks.reduce((sum, a) => sum + a.likes, 0),
-      totalViews: artworks.reduce((sum, a) => sum + a.views, 0),
-      averageTimeSpent: artworks.reduce((sum, a) => sum + a.duration, 0) / artworks.length,
-      mostUsedTools: this.getMostUsedTools(artworks),
-      favoriteTime: this.getFavoriteDrawingTime(artworks),
+      ...portfolio.stats,
+      mostUsedBrushes: this.getMostUsedBrushes(artworks),
+      favoriteColors: this.getFavoriteColors(artworks),
+      skillProgression: this.getSkillProgression(artworks),
     };
 
     return stats;
   }
 
-  private getMostUsedTools(artworks: Artwork[]): string[] {
-    const toolCounts = new Map<string, number>();
+  private getMostUsedBrushes(artworks: Artwork[]): string[] {
+    const brushCount = new Map<string, number>();
     
     artworks.forEach(artwork => {
-      artwork.tools.forEach(tool => {
-        toolCounts.set(tool, (toolCounts.get(tool) || 0) + 1);
+      artwork.metadata.brushesUsed.forEach(brush => {
+        const count = brushCount.get(brush) || 0;
+        brushCount.set(brush, count + 1);
       });
     });
 
-    return Array.from(toolCounts.entries())
+    return Array.from(brushCount.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([tool]) => tool);
+      .slice(0, 5)
+      .map(([brush]) => brush);
   }
 
-  private getFavoriteDrawingTime(artworks: Artwork[]): string {
-    const hourCounts = new Array(24).fill(0);
+  private getFavoriteColors(artworks: Artwork[]): string[] {
+    const colorCount = new Map<string, number>();
     
     artworks.forEach(artwork => {
-      const hour = new Date(artwork.createdAt).getHours();
-      hourCounts[hour]++;
+      // This would analyze drawing data for most used colors
+      // For now, return empty array
     });
 
-    const favoriteHour = hourCounts.indexOf(Math.max(...hourCounts));
+    return Array.from(colorCount.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([color]) => color);
+  }
+
+  private getSkillProgression(artworks: Artwork[]): any[] {
+    // Analyze artworks over time to show skill progression
+    const monthlyProgress = new Map<string, {
+      count: number;
+      avgComplexity: number;
+      avgTimeSpent: number;
+    }>();
+
+    artworks.forEach(artwork => {
+      const month = new Date(artwork.createdAt).toISOString().substring(0, 7);
+      const current = monthlyProgress.get(month) || {
+        count: 0,
+        avgComplexity: 0,
+        avgTimeSpent: 0,
+      };
+
+      current.count++;
+      current.avgTimeSpent = (current.avgTimeSpent * (current.count - 1) + artwork.metadata.drawingTime) / current.count;
+      // Calculate complexity based on layers, strokes, etc.
+      const complexity = artwork.metadata.layersUsed * 2 + artwork.metadata.strokeCount / 100;
+      current.avgComplexity = (current.avgComplexity * (current.count - 1) + complexity) / current.count;
+
+      monthlyProgress.set(month, current);
+    });
+
+    return Array.from(monthlyProgress.entries())
+      .map(([month, data]) => ({
+        month,
+        artworksCreated: data.count,
+        averageComplexity: data.avgComplexity,
+        averageTimeSpent: data.avgTimeSpent,
+      }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+  }
+
+  public exportPortfolioData(userId: string): {
+    user: string;
+    exportDate: number;
+    portfolio: Portfolio | null;
+    artworks: Artwork[];
+    analytics: any;
+  } {
+    const portfolio = this.portfolios.get(userId);
+    const userArtworks = this.getUserArtworks(userId);
     
-    if (favoriteHour >= 5 && favoriteHour < 12) {
-      return 'Morning';
-    } else if (favoriteHour >= 12 && favoriteHour < 17) {
-      return 'Afternoon';
-    } else if (favoriteHour >= 17 && favoriteHour < 21) {
-      return 'Evening';
-    } else {
-      return 'Night';
+    const analytics = userArtworks.map(a => ({
+      artworkId: a.id,
+      title: a.title,
+      createdAt: a.createdAt,
+      stats: a.stats,
+      metadata: a.metadata,
+    }));
+
+    return {
+      user: userId,
+      exportDate: Date.now(),
+      portfolio,
+      artworks: userArtworks,
+      analytics,
+    };
+  }
+
+  // ---- PRIVATE METHODS ----
+
+  private async loadPortfolios(): Promise<void> {
+    try {
+      const savedPortfolios = await dataManager.get<Record<string, Portfolio>>('portfolios');
+      if (savedPortfolios) {
+        Object.entries(savedPortfolios).forEach(([userId, portfolio]) => {
+          this.portfolios.set(userId, portfolio);
+          
+          // Rebuild artwork map
+          portfolio.artworks.forEach(artwork => {
+            this.artworks.set(artwork.id, artwork);
+          });
+        });
+      }
+
+      const savedAnalytics = await dataManager.get<any>('artwork_analytics');
+      if (savedAnalytics) {
+        Object.entries(savedAnalytics).forEach(([artworkId, analytics]) => {
+          this.artworkAnalytics.set(artworkId, analytics as any);
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load portfolios:', error);
     }
   }
 
-  public async exportPortfolio(): Promise<any> {
-    const user = profileSystem.getCurrentUser();
-    if (!user) {
-      throw new Error('No user logged in');
+  private async savePortfolios(): Promise<void> {
+    try {
+      const portfoliosObj: Record<string, Portfolio> = {};
+      this.portfolios.forEach((portfolio, userId) => {
+        portfoliosObj[userId] = portfolio;
+      });
+      await dataManager.set('portfolios', portfoliosObj);
+
+      const analyticsObj: Record<string, any> = {};
+      this.artworkAnalytics.forEach((analytics, artworkId) => {
+        analyticsObj[artworkId] = analytics;
+      });
+      await dataManager.set('artwork_analytics', analyticsObj);
+    } catch (error) {
+      console.error('Failed to save portfolios:', error);
     }
-
-    const artworks = this.getUserArtworks();
-    const stats = this.getPortfolioStats();
-
-    return {
-      user: {
-        id: user.id,
-        username: user.username,
-        displayName: user.displayName,
-        level: user.level,
-      },
-      artworks: artworks.map(a => ({
-        id: a.id,
-        title: a.title,
-        description: a.description,
-        createdAt: a.createdAt,
-        duration: a.duration,
-        tools: a.tools,
-        tags: a.tags,
-        likes: a.likes,
-        views: a.views,
-      })),
-      stats,
-      exportedAt: new Date(),
-    };
   }
 }
 

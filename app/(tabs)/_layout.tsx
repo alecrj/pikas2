@@ -19,8 +19,10 @@ import {
 
 export default function TabLayout() {
   const { colors, theme } = useTheme();
-  const { streakDays, dailyGoalProgress } = useUserProgress();
-
+  const { progress, getDailyGoalProgress } = useUserProgress();
+  const streakDays = progress?.streakDays || 0;
+  const dailyGoalProgress = getDailyGoalProgress();
+  
   const handleTabPress = () => {
     // Haptic feedback on tab press
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

@@ -50,3 +50,12 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 }
 
 export default ErrorBoundary;
+export const withErrorBoundary = <P extends object>(
+    Component: React.ComponentType<P>
+  ) => {
+    return (props: P) => (
+      <ErrorBoundary>
+        <Component {...props} />
+      </ErrorBoundary>
+    );
+  };

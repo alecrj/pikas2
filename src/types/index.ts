@@ -180,23 +180,71 @@ export interface LessonObjective {
   required: boolean;
 }
 
-export interface TheoryContent {
+// NEW: Missing types for learning system
+export interface TheorySegment {
+  id: string;
   type: 'text' | 'image' | 'video' | 'interactive';
   content: string;
-  duration?: number;
+  duration: number;
+  order: number;
   interactive?: boolean;
 }
 
-export interface PracticeStep {
+export interface PracticeInstruction {
   id: string;
-  instruction: string;
+  text: string;
   type: 'draw' | 'observe' | 'compare' | 'trace';
   hint?: string;
   expectedResult?: string;
-  validation?: {
-    type: 'stroke-count' | 'shape-accuracy' | 'color-match' | 'proportion';
-    criteria: any;
+  validation?: ValidationRule;
+  order: number;
+}
+
+export interface ValidationRule {
+  type: 'stroke-count' | 'shape-accuracy' | 'color-match' | 'proportion';
+  criteria: any;
+  threshold?: number;
+}
+
+export interface Assessment {
+  criteria: AssessmentCriteria[];
+  passingScore: number;
+  maxAttempts: number;
+  bonusObjectives?: {
+    id: string;
+    description: string;
+    xpBonus: number;
+  }[];
+}
+
+export interface LearningObjective {
+  id: string;
+  description: string;
+  type: 'primary' | 'secondary' | 'bonus';
+  required: boolean;
+}
+
+export interface TheoryContent {
+  segments: TheorySegment[];
+  totalDuration: number;
+  objectives: LearningObjective[];
+}
+
+export interface PracticeContent {
+  instructions: PracticeInstruction[];
+  hints: {
+    id: string;
+    stepIndex: number;
+    text: string;
+    triggerCondition?: string;
+  }[];
+  referenceImage?: string;
+  canvas: {
+    width: number;
+    height: number;
+    backgroundColor: string;
   };
+  expectedDuration: number;
 }
 
 export interface AssessmentCriteria {
@@ -205,6 +253,7 @@ export interface AssessmentCriteria {
   description: string;
   weight: number;
   passingScore: number;
+  evaluationType?: 'automatic' | 'manual';
 }
 
 export interface Lesson {
@@ -218,25 +267,9 @@ export interface Lesson {
   difficulty: number;
   prerequisites: string[];
   objectives: LessonObjective[];
-  theory?: {
-    content: TheoryContent[];
-    duration: number;
-  };
-  practice?: {
-    steps: PracticeStep[];
-    canvas: {
-      width: number;
-      height: number;
-      backgroundColor: string;
-      referenceImage?: string;
-    };
-    expectedDuration: number;
-  };
-  assessment?: {
-    criteria: AssessmentCriteria[];
-    passingScore: number;
-    maxAttempts: number;
-  };
+  theoryContent: TheoryContent;
+  practiceContent: PracticeContent;
+  assessment?: Assessment;
   rewards: {
     xp: number;
     achievements: string[];
@@ -248,6 +281,12 @@ export interface Lesson {
   attempts: number;
   bestScore?: number;
   timeSpent: number;
+  
+  // Deprecated aliases for backward compatibility
+  duration?: number; // Use estimatedTime instead
+  xpReward?: number; // Use rewards.xp instead
+  skillTreeId?: string; // Use skillTree instead
+  unlockRequirements?: string[]; // Use prerequisites instead
 }
 
 export interface SkillTree {
@@ -264,6 +303,53 @@ export interface SkillTree {
   progress: number;
   unlockedAt?: number;
   completedAt?: number;
+  iconUrl?: string;
+  completionPercentage?: number;
+}
+
+export interface SkillTreeProgress {
+  skillTreeId: string;
+  completedLessons: string[];
+  totalXpEarned: number;
+  lastActivityDate: string;
+  completionPercentage: number;
+}
+
+export interface LearningProgress {
+  userId: string;
+  currentLevel: number;
+  totalXP: number;
+  completedLessons: string[];
+  skillTrees: SkillTreeProgress[];
+  currentStreak: number;
+  longestStreak: number;
+  lastActivityDate: string;
+  achievements: string[];
+  preferences: {
+    dailyGoal: number;
+    reminderTime?: string;
+    difficulty: 'adaptive' | 'challenging' | 'comfortable';
+  };
+}
+
+export interface LessonState {
+  lessonId: string;
+  startedAt: Date;
+  pausedAt?: Date;
+  theoryProgress: {
+    currentSegment: number;
+    completedSegments: number[];
+    timeSpent: number;
+  };
+  practiceProgress: {
+    currentStep: number;
+    completedSteps: number[];
+    attempts: Record<string, number>;
+    hints: string[];
+    timeSpent: number;
+  };
+  overallProgress: number;
+  isPaused: boolean;
 }
 
 export interface LearningPath {
@@ -301,6 +387,20 @@ export interface LearningState {
 }
 
 // ========================== USER TYPES ==========================
+
+// NEW: User type for social features
+export interface User {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar?: string;
+  bio?: string;
+  following: string[];
+  followers: string[];
+  isVerified: boolean;
+  isOnline: boolean;
+  lastSeenAt: number;
+}
 
 export interface UserProfile {
   id: string;
@@ -366,6 +466,38 @@ export interface Achievement {
   progress?: number;
 }
 
+// NEW: Missing user-related types
+export interface UserPreferences {
+  theme: 'light' | 'dark' | 'auto';
+  notifications: {
+    lessons: boolean;
+    achievements: boolean;
+    social: boolean;
+    challenges: boolean;
+  };
+  privacy: {
+    profile: 'public' | 'friends' | 'private';
+    artwork: 'public' | 'friends' | 'private';
+    progress: 'public' | 'friends' | 'private';
+  };
+  learning: {
+    dailyGoal: number;
+    reminderTime?: string;
+    difficulty: 'adaptive' | 'challenging' | 'comfortable';
+  };
+}
+
+export interface UserStats {
+  totalDrawingTime: number;
+  totalLessonsCompleted: number;
+  totalArtworksCreated: number;
+  currentStreak: number;
+  longestStreak: number;
+  averageSessionTime: number;
+  favoriteTools: string[];
+  skillDistribution: Record<string, number>;
+}
+
 export interface Portfolio {
   id: string;
   userId: string;
@@ -412,6 +544,19 @@ export interface Artwork {
   };
   visibility: 'public' | 'unlisted' | 'private';
   featured: boolean;
+  
+  // Extended properties for social features
+  isPublic?: boolean;
+  likes?: number;
+  views?: number;
+  comments?: Comment[];
+  duration?: number;
+  tools?: string[];
+  layers?: Layer[];
+  dimensions?: { width: number; height: number };
+  challengeId?: string;
+  thumbnailUrl?: string; // Alias for thumbnail
+  fullImageUrl?: string; // Alias for imageUrl
 }
 
 export interface Collection {
@@ -448,6 +593,18 @@ export interface Challenge {
   submissions: ChallengeSubmission[];
   featured: boolean;
   tags: string[];
+  prizes?: Prize[];
+  winners?: string[];
+}
+
+// NEW: Prize type for challenges
+export interface Prize {
+  id: string;
+  name: string;
+  description: string;
+  type: 'xp' | 'achievement' | 'badge' | 'feature';
+  value: any;
+  place: number;
 }
 
 export interface ChallengeSubmission {
@@ -459,6 +616,11 @@ export interface ChallengeSubmission {
   votes: number;
   rank?: number;
   featured: boolean;
+  
+  // Extended properties
+  likes?: number;
+  comments?: Comment[];
+  views?: number;
 }
 
 export interface SocialFeed {
@@ -506,6 +668,16 @@ export interface PerformanceMetrics {
   drawCalls: number;
   inputLatency: number;
   renderTime: number;
+}
+
+// NEW: AppError type
+export interface AppError {
+  code: string;
+  message: string;
+  severity: 'low' | 'medium' | 'high' | 'critical';
+  context?: any;
+  timestamp: Date;
+  stack?: string;
 }
 
 export interface ErrorInfo {
@@ -591,6 +763,7 @@ export interface UserProgressContextValue {
   addAchievement: (achievementId: string) => void;
   updateStreak: () => void;
   checkDailyStreak: () => void;
+  updateLearningStats: (category: string, stats: Record<string, number>) => void;
   
   // Portfolio management
   saveArtwork: (artwork: Omit<Artwork, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<string>;
@@ -683,3 +856,12 @@ export interface UserEvent extends AppEvent {
     platform?: string;
   };
 }
+
+// NEW: Type for dimensions
+export interface Dimensions {
+  width: number;
+  height: number;
+}
+
+// NEW: Achievement type enum
+export type AchievementType = Achievement['category'];

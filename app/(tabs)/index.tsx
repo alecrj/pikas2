@@ -11,7 +11,8 @@ import {
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../src/contexts/ThemeContext';
-import { useUserProgress, useProgress, useLearning } from '../../src/contexts/UserProgressContext';
+import { useUserProgress, useProgress } from '../../src/contexts/UserProgressContext';
+import { useLearning } from '../../src/contexts/LearningContext';
 import { useLearning as useLessonContext } from '../../src/contexts/LearningContext';
 import { challengeSystem } from '../../src/engines/community/ChallengeSystem';
 import { typography } from '../../src/constants/typography'; // FIXED: Import typography
