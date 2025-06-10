@@ -307,6 +307,7 @@ export interface Lesson {
   attempts: number;
   bestScore?: number;
   timeSpent: number;
+  tags: string[]; // FIXED: Added tags property for lesson categorization and search
   
   // Backward compatibility properties (marked as optional but functional)
   duration?: number; // Maps to estimatedTime

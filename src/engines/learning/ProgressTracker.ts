@@ -30,7 +30,6 @@ export class ProgressTracker {
     return ProgressTracker.instance;
   }
 
-  // FIXED: Added missing initialize method
   public async initialize(): Promise<void> {
     await this.loadProgress();
     this.startAnalytics();
@@ -41,7 +40,6 @@ export class ProgressTracker {
     this.startAnalytics();
   }
 
-  // FIXED: Made loadProgress public (was private)
   public async loadProgress(): Promise<void> {
     const progress = await dataManager.getLearningProgress();
     if (progress) {
@@ -52,15 +50,24 @@ export class ProgressTracker {
       // Initialize new progress
       const user = profileSystem.getCurrentUser();
       if (user) {
+        // FIXED: Include all required properties for LearningProgress
         this.learningProgress = {
           userId: user.id,
+          currentLevel: 1,
+          totalXP: 0,
           completedLessons: [],
           skillTrees: [],
-          totalXP: 0,
           currentStreak: 0,
           longestStreak: 0,
-          dailyGoal: 100,
+          lastActivityDate: new Date().toISOString(),
+          achievements: [],
+          preferences: {
+            dailyGoal: 100,
+            reminderTime: '18:00',
+            difficulty: 'adaptive',
+          },
           dailyProgress: 0,
+          dailyGoal: 100,
         };
         await this.saveProgress();
       }
@@ -186,7 +193,6 @@ export class ProgressTracker {
     this.analyticsData.estimatedMasteryDate = masteryDate;
   }
 
-  // FIXED: Added missing completeLesson method
   public async completeLesson(lessonId: string, score: number): Promise<void> {
     if (!this.learningProgress) {
       await this.loadProgress();
@@ -269,6 +275,8 @@ export class ProgressTracker {
     if (!this.learningProgress) return;
 
     this.learningProgress.dailyGoal = Math.max(50, Math.min(500, xpGoal));
+    // Also update preferences
+    this.learningProgress.preferences.dailyGoal = this.learningProgress.dailyGoal;
     await this.saveProgress();
     this.notifyListeners();
   }

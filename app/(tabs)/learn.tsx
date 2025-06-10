@@ -43,7 +43,7 @@ const { width: screenWidth } = Dimensions.get('window');
 export default function LearnScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { user, addXP } = useUserProgress();
+  const { user, progress, addXP } = useUserProgress();
   const { currentSkillTree, setCurrentSkillTree } = useLearning();
   
   const [skillTrees, setSkillTrees] = useState<SkillTree[]>([]);
@@ -58,10 +58,10 @@ export default function LearnScreen() {
     loadRecommendedLesson();
     
     // Subscribe to progress updates
-    const unsubscribe = skillTreeManager.subscribeToProgress((progress) => {
+    const unsubscribe = skillTreeManager.subscribeToProgress((learningProgress) => {
         // Convert the skill trees array to a Map
         const map = new Map<string, SkillTreeProgress>();
-        progress.skillTrees.forEach(tree => {
+        learningProgress.skillTrees.forEach(tree => {
           map.set(tree.skillTreeId, tree);
         });
         setProgressMap(map);
@@ -127,11 +127,11 @@ export default function LearnScreen() {
               <View style={styles.lessonMeta}>
                 <View style={styles.metaItem}>
                   <Clock size={14} color={theme.colors.textSecondary} />
-                  <Text style={styles.metaText}>{recommendedLesson.duration} min</Text>
+                  <Text style={styles.metaText}>{recommendedLesson.duration || recommendedLesson.estimatedTime} min</Text>
                 </View>
                 <View style={styles.metaItem}>
                   <Trophy size={14} color={theme.colors.textSecondary} />
-                  <Text style={styles.metaText}>{recommendedLesson.xpReward} XP</Text>
+                  <Text style={styles.metaText}>{recommendedLesson.xpReward || recommendedLesson.rewards?.xp} XP</Text>
                 </View>
               </View>
             </View>
@@ -143,8 +143,8 @@ export default function LearnScreen() {
   };
 
   const renderSkillTree = (tree: SkillTree, index: number) => {
-    const progress = progressMap.get(tree.id);
-    const completedCount = progress?.completedLessons.length || 0;
+    const treeProgress = progressMap.get(tree.id);
+    const completedCount = treeProgress?.completedLessons.length || 0;
     const totalCount = tree.lessons.length;
     const completionPercentage = totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
 
@@ -181,7 +181,7 @@ export default function LearnScreen() {
         {currentSkillTree?.id === tree.id && (
           <View style={styles.lessonList}>
             {tree.lessons.map((lesson, lessonIndex) => 
-              renderLesson(lesson, lessonIndex, progress)
+              renderLesson(lesson, lessonIndex, treeProgress)
             )}
           </View>
         )}
@@ -192,10 +192,10 @@ export default function LearnScreen() {
   const renderLesson = (
     lesson: Lesson, 
     index: number, 
-    progress: SkillTreeProgress | undefined
+    treeProgress: SkillTreeProgress | undefined
   ) => {
-    const isCompleted = progress?.completedLessons.includes(lesson.id) || false;
-    const isUnlocked = skillTreeManager.getAvailableLessons(lesson.skillTreeId).includes(lesson);
+    const isCompleted = treeProgress?.completedLessons.includes(lesson.id) || false;
+    const isUnlocked = skillTreeManager.getAvailableLessons(lesson.skillTree || lesson.skillTreeId || '').includes(lesson);
     const isNext = recommendedLesson?.id === lesson.id;
 
     const scale = useSharedValue(1);
@@ -262,7 +262,7 @@ export default function LearnScreen() {
               <View style={styles.lessonMetaRow}>
                 <View style={styles.metaItem}>
                   <Clock size={12} color={theme.colors.textSecondary} />
-                  <Text style={styles.metaTextSmall}>{lesson.duration} min</Text>
+                  <Text style={styles.metaTextSmall}>{lesson.duration || lesson.estimatedTime} min</Text>
                 </View>
                 <View style={styles.metaItem}>
                   <Star size={12} color={theme.colors.textSecondary} />
@@ -272,7 +272,7 @@ export default function LearnScreen() {
                 </View>
                 <View style={styles.metaItem}>
                   <Trophy size={12} color={theme.colors.textSecondary} />
-                  <Text style={styles.metaTextSmall}>{lesson.xpReward} XP</Text>
+                  <Text style={styles.metaTextSmall}>{lesson.xpReward || lesson.rewards?.xp} XP</Text>
                 </View>
               </View>
             </View>
@@ -310,7 +310,7 @@ export default function LearnScreen() {
           </View>
           <View style={styles.statCard}>
             <Award size={24} color={theme.colors.error} />
-            <Text style={styles.statValue}>{user?.achievements.length || 0}</Text>
+            <Text style={styles.statValue}>{progress?.achievements.length || 0}</Text>
             <Text style={styles.statLabel}>Badges</Text>
           </View>
         </View>

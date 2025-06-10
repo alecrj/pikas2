@@ -191,6 +191,12 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
     initializeUserData();
   }, []);
 
+  // Helper function to calculate XP to next level
+  const calculateXPToNextLevel = (level: number, currentXP: number): number => {
+    const xpForNextLevel = level * 1000; // Simple calculation
+    return Math.max(0, xpForNextLevel - currentXP);
+  };
+
   const initializeUserData = async () => {
     try {
       dispatch({ type: 'SET_LOADING', loading: true });
@@ -198,7 +204,7 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
       // Load or create user profile
       const user = await profileSystem.getCurrentUser();
       if (user) {
-        // FIXED: Convert User to UserProfile format
+        // Convert User to UserProfile format
         const userProfile: UserProfile = {
           id: user.id,
           displayName: user.displayName,
@@ -223,12 +229,12 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
         };
         dispatch({ type: 'SET_USER', user: userProfile });
         
-        // FIXED: Create UserProgress from User data
+        // Create UserProgress from User data
         const userProgress: UserProgress = {
           userId: user.id,
           level: user.level,
           xp: user.xp,
-          xpToNextLevel: this.calculateXPToNextLevel(user.level, user.xp),
+          xpToNextLevel: calculateXPToNextLevel(user.level, user.xp),
           skillPoints: {
             drawing: 0,
             theory: 0,
@@ -252,12 +258,14 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
         // Load portfolio
         const portfolio = await portfolioManager.getUserPortfolio(user.id);
         if (portfolio) {
-          // FIXED: Ensure portfolio has all required properties
+          // Ensure portfolio has all required properties
           const completePortfolio: Portfolio = {
             ...portfolio,
             stats: {
               ...portfolio.stats,
               followerCount: portfolio.stats.followerCount || 0,
+              publicArtworks: portfolio.stats.publicArtworks || 0,
+              averageTimeSpent: portfolio.stats.averageTimeSpent || 0,
             },
           };
           dispatch({ type: 'SET_PORTFOLIO', portfolio: completePortfolio });
@@ -271,18 +279,12 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
     }
   };
 
-  // FIXED: Added calculateXPToNextLevel helper method
-  const calculateXPToNextLevel = (level: number, currentXP: number): number => {
-    const xpForNextLevel = level * 1000; // Simple calculation
-    return Math.max(0, xpForNextLevel - currentXP);
-  };
-
   // User management
   const createUser = async (profile: Partial<UserProfile>): Promise<void> => {
     try {
       dispatch({ type: 'SET_LOADING', loading: true });
       
-      // FIXED: Use correct method signature with required parameters
+      // Use correct method signature with required parameters
       const newUser = await profileSystem.createUser(
         profile.email || '',
         profile.displayName || 'User',
@@ -342,12 +344,14 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
       
       // Create initial portfolio
       const initialPortfolio = await portfolioManager.createPortfolio(newUser.id);
-      // FIXED: Ensure portfolio has all required properties
+      // Ensure portfolio has all required properties
       const completePortfolio: Portfolio = {
         ...initialPortfolio,
         stats: {
           ...initialPortfolio.stats,
           followerCount: 0, // Ensure followerCount is present
+          publicArtworks: 0,
+          averageTimeSpent: 0,
         },
       };
       dispatch({ type: 'SET_PORTFOLIO', portfolio: completePortfolio });
@@ -365,7 +369,7 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
     if (!state.user) return;
     
     try {
-      // FIXED: Use updateUser method (which exists in ProfileSystem)
+      // Use updateUser method (which exists in ProfileSystem)
       const updatedUser = await profileSystem.updateUser({
         displayName: updates.displayName,
         avatar: updates.avatar,
@@ -392,10 +396,10 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
     if (!state.user) return;
     
     try {
-      await profileSystem.logout(); // FIXED: Use existing logout method
-      dispatch({ type: 'SET_USER', user: null as any }); // FIXED: Handle null assignment
-      dispatch({ type: 'SET_PROGRESS', progress: null as any }); // FIXED: Handle null assignment
-      dispatch({ type: 'SET_PORTFOLIO', portfolio: null as any }); // FIXED: Handle null assignment
+      await profileSystem.logout(); // Use existing logout method
+      dispatch({ type: 'SET_USER', user: null as any }); // Handle null assignment
+      dispatch({ type: 'SET_PROGRESS', progress: null as any }); // Handle null assignment
+      dispatch({ type: 'SET_PORTFOLIO', portfolio: null as any }); // Handle null assignment
       eventBus.emit('user:deleted', { userId: state.user.id });
     } catch (error) {
       console.error('Failed to delete account:', error);
@@ -425,12 +429,14 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
   };
 
   const addAchievement = (achievementId: string) => {
-    // FIXED: Use progressionSystem to unlock achievement
+    // Use progressionSystem to unlock achievement
     progressionSystem.unlockAchievement({
       id: achievementId,
       name: getAchievementName(achievementId),
+      title: getAchievementName(achievementId),
       description: getAchievementDescription(achievementId),
       icon: getAchievementIcon(achievementId),
+      iconUrl: getAchievementIcon(achievementId),
       category: getAchievementCategory(achievementId),
       requirements: { type: 'custom', value: 1 },
       rarity: 'common',
@@ -570,7 +576,7 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
     };
   };
 
-  // FIXED: Add missing updateLearningStats method
+  // Add missing updateLearningStats method
   const updateLearningStats = (category: string, stats: Record<string, number>) => {
     if (!state.progress) return;
     
@@ -691,7 +697,7 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
     addAchievement,
     updateStreak,
     checkDailyStreak,
-    updateLearningStats, // FIXED: Added missing method
+    updateLearningStats, // Added missing method
     
     // Portfolio management
     saveArtwork,
@@ -728,7 +734,7 @@ export function useProgress() {
     level: progress?.level || 1,
     xp: progress?.xp || 0,
     xpToNextLevel: progress?.xpToNextLevel || 1000,
-    xpProgress: progress ? Math.min(1, progress.xp / 1000) : 0, // FIXED: Ensure 0-1 range
+    xpProgress: progress ? Math.min(1, progress.xp / 1000) : 0, // Ensure 0-1 range
     streakDays: progress?.streakDays || 0,
     achievements: progress?.achievements || [],
     learningStats: progress?.learningStats || {

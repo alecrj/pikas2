@@ -14,6 +14,7 @@ interface Portfolio {
     totalLikes: number;
     totalViews: number;
     averageTimeSpent: number;
+    followerCount: number;
   };
   settings: {
     publicProfile: boolean;
@@ -68,6 +69,7 @@ export class PortfolioManager {
         totalLikes: 0,
         totalViews: 0,
         averageTimeSpent: 0,
+        followerCount: 0,
       },
       settings: {
         publicProfile: true,
@@ -494,7 +496,8 @@ export class PortfolioManager {
     artworks: Artwork[];
     analytics: any;
   } {
-    const portfolio = this.portfolios.get(userId);
+    // FIXED: Handle undefined by explicitly converting to null
+    const portfolio = this.portfolios.get(userId) || null;
     const userArtworks = this.getUserArtworks(userId);
     
     const analytics = userArtworks.map(a => ({

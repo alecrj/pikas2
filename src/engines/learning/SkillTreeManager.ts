@@ -41,13 +41,21 @@ export class SkillTreeManager {
         this.userProgress = progress;
         this.notifyProgressListeners();
       } else {
-        // Initialize new progress
+        // Initialize new progress with all required properties
         this.userProgress = {
           userId: 'current_user',
-          skillTrees: [],
+          currentLevel: 1,
           totalXP: 0,
+          skillTrees: [],
           currentStreak: 0,
           longestStreak: 0,
+          lastActivityDate: new Date().toISOString(),
+          achievements: [],
+          preferences: {
+            dailyGoal: 100,
+            reminderTime: '18:00',
+            difficulty: 'adaptive',
+          },
           dailyGoal: 100,
           dailyProgress: 0,
           completedLessons: [],
@@ -68,6 +76,11 @@ export class SkillTreeManager {
       description: 'Master the essential building blocks of drawing',
       iconUrl: 'skill_tree_fundamentals',
       category: 'fundamentals',
+      order: 1,
+      prerequisites: [],
+      estimatedDuration: 20,
+      difficultyLevel: 'beginner',
+      progress: 0,
       lessons: this.createFundamentalLessons(),
       totalXP: 2250, // 15 lessons × 150 XP average
       completionPercentage: 0,
@@ -82,6 +95,11 @@ export class SkillTreeManager {
       description: 'Explore sophisticated drawing methods',
       iconUrl: 'skill_tree_advanced',
       category: 'techniques',
+      order: 2,
+      prerequisites: ['fundamentals'],
+      estimatedDuration: 30,
+      difficultyLevel: 'advanced',
+      progress: 0,
       lessons: [],
       totalXP: 3000,
       completionPercentage: 0,
@@ -95,27 +113,30 @@ export class SkillTreeManager {
       // Lesson 1: Lines & Basic Shapes
       {
         id: 'lesson_1_lines_shapes',
-        skillTreeId: 'fundamentals',
         title: 'Lines & Basic Shapes',
         description: 'Master straight lines, curves, and basic geometric shapes',
-        thumbnailUrl: 'lesson_1_thumb',
-        duration: 8,
-        difficulty: 1,
+        type: 'practice',
+        skillTree: 'fundamentals',
         order: 1,
+        estimatedTime: 8,
+        difficulty: 1,
         prerequisites: [],
         objectives: [
-          { id: 'obj_1_1', description: 'Draw straight lines with confidence', completed: false },
-          { id: 'obj_1_2', description: 'Create perfect circles and squares', completed: false },
-          { id: 'obj_1_3', description: 'Understand line weight and pressure', completed: false },
+          { id: 'obj_1_1', description: 'Draw straight lines with confidence', completed: false, required: true },
+          { id: 'obj_1_2', description: 'Create perfect circles and squares', completed: false, required: true },
+          { id: 'obj_1_3', description: 'Understand line weight and pressure', completed: false, required: false },
         ],
         theoryContent: {
           segments: [
             {
+              id: 'theory_1_1',
               type: 'text',
               content: { text: 'Lines are the foundation of all drawing. In this lesson, you\'ll learn to control your marks and create confident strokes.' },
               duration: 30,
+              order: 1,
             },
             {
+              id: 'theory_1_2',
               type: 'interactive',
               content: { 
                 demo: 'line_drawing',
@@ -123,22 +144,29 @@ export class SkillTreeManager {
                 instructions: 'Practice drawing straight lines by connecting the dots'
               },
               duration: 60,
+              order: 2,
             },
             {
+              id: 'theory_1_3',
               type: 'text',
               content: { text: 'Basic shapes - circles, squares, triangles - are building blocks for complex forms. Master these and you can draw anything.' },
               duration: 30,
+              order: 3,
             },
           ],
-          estimatedDuration: 2,
+          totalDuration: 2,
+          objectives: [
+            { id: 'theory_obj_1', description: 'Understand line fundamentals', type: 'primary', required: true },
+          ],
         },
         practiceContent: {
           instructions: [
             {
-              step: 1,
+              id: 'practice_1_1',
               text: 'Draw 10 straight horizontal lines using consistent pressure',
+              type: 'draw',
+              order: 1,
               highlightArea: { x: 100, y: 100, width: 300, height: 50 },
-              requiredAction: 'draw_lines',
               validation: {
                 type: 'line_detection',
                 params: { minLines: 10, straightnessThreshold: 0.8 },
@@ -146,10 +174,11 @@ export class SkillTreeManager {
               },
             },
             {
-              step: 2,
+              id: 'practice_1_2',
               text: 'Draw 5 circles, focusing on closing the shape smoothly',
+              type: 'draw',
+              order: 2,
               highlightArea: { x: 100, y: 200, width: 300, height: 200 },
-              requiredAction: 'draw_circles',
               validation: {
                 type: 'shape_completion',
                 params: { targetShape: 'circle', minShapes: 5 },
@@ -157,66 +186,71 @@ export class SkillTreeManager {
               },
             },
             {
-              step: 3,
+              id: 'practice_1_3',
               text: 'Create 3 squares with equal sides and sharp corners',
+              type: 'draw',
+              order: 3,
               highlightArea: { x: 100, y: 450, width: 300, height: 150 },
-              requiredAction: 'draw_squares',
               validation: {
-                type: 'shape_accuracy',
+                type: 'shape-accuracy',
                 params: { targetShape: 'square', minShapes: 3 },
                 threshold: 0.75,
               },
             },
           ],
-          referenceImage: 'lesson_1_reference',
-          guideLayers: [
-            {
-              id: 'guide_grid',
-              type: 'grid',
-              visible: true,
-              opacity: 0.3,
-              data: { spacing: 50, color: '#cccccc' },
-            },
-          ],
           hints: [
             {
               id: 'hint_1_1',
-              triggerCondition: 'instruction_0_fail',
+              stepIndex: 0,
+              text: 'Keep your wrist stable and move from your shoulder for smoother lines',
               content: 'Keep your wrist stable and move from your shoulder for smoother lines',
-              type: 'tip',
+              triggerCondition: 'instruction_0_fail',
             },
             {
               id: 'hint_1_2',
-              triggerCondition: 'instruction_1_fail',
+              stepIndex: 1,
+              text: 'Don\'t worry about perfection - focus on completing the circular motion',
               content: 'Don\'t worry about perfection - focus on completing the circular motion',
-              type: 'encouragement',
+              triggerCondition: 'instruction_1_fail',
             },
           ],
-          toolsRequired: ['pencil'],
-          estimatedDuration: 5,
+          referenceImage: 'lesson_1_reference',
+          canvas: {
+            width: 1024,
+            height: 768,
+            backgroundColor: '#ffffff',
+          },
+          expectedDuration: 5,
         },
         assessment: {
           criteria: [
             {
               id: 'line_quality',
+              name: 'Line Quality',
               description: 'Line confidence and consistency',
               weight: 0.4,
+              passingScore: 0.7,
               evaluationType: 'automatic',
             },
             {
               id: 'shape_accuracy',
+              name: 'Shape Accuracy',
               description: 'Accuracy of basic shapes',
               weight: 0.4,
+              passingScore: 0.7,
               evaluationType: 'automatic',
             },
             {
               id: 'completion',
+              name: 'Completion',
               description: 'Completed all exercises',
               weight: 0.2,
+              passingScore: 0.7,
               evaluationType: 'automatic',
             },
           ],
           passingScore: 0.7,
+          maxAttempts: 3,
           bonusObjectives: [
             {
               id: 'bonus_speed',
@@ -225,7 +259,19 @@ export class SkillTreeManager {
             },
           ],
         },
+        rewards: {
+          xp: 100,
+          achievements: ['first_lesson'],
+          unlocks: ['lesson_2_construction'],
+        },
+        status: 'available',
+        progress: 0,
+        attempts: 0,
+        timeSpent: 0,
+        // Backward compatibility
+        duration: 8,
         xpReward: 100,
+        skillTreeId: 'fundamentals',
         unlockRequirements: [],
         tags: ['basics', 'lines', 'shapes', 'foundation'],
       },
@@ -233,27 +279,30 @@ export class SkillTreeManager {
       // Lesson 2: Shape Construction
       {
         id: 'lesson_2_construction',
-        skillTreeId: 'fundamentals',
         title: 'Shape Construction',
         description: 'Build complex forms using basic shapes as building blocks',
-        thumbnailUrl: 'lesson_2_thumb',
-        duration: 10,
-        difficulty: 2,
+        type: 'practice',
+        skillTree: 'fundamentals',
         order: 2,
+        estimatedTime: 10,
+        difficulty: 2,
         prerequisites: ['lesson_1_lines_shapes'],
         objectives: [
-          { id: 'obj_2_1', description: 'Combine basic shapes to create complex forms', completed: false },
-          { id: 'obj_2_2', description: 'Draw a simple apple using construction', completed: false },
-          { id: 'obj_2_3', description: 'Understand proportional relationships', completed: false },
+          { id: 'obj_2_1', description: 'Combine basic shapes to create complex forms', completed: false, required: true },
+          { id: 'obj_2_2', description: 'Draw a simple apple using construction', completed: false, required: true },
+          { id: 'obj_2_3', description: 'Understand proportional relationships', completed: false, required: false },
         ],
         theoryContent: {
           segments: [
             {
+              id: 'theory_2_1',
               type: 'text',
               content: { text: 'Everything you see can be broken down into basic shapes. An apple is a circle with modifications. A house is rectangles and triangles.' },
               duration: 45,
+              order: 1,
             },
             {
+              id: 'theory_2_2',
               type: 'interactive',
               content: { 
                 demo: 'shape_breakdown',
@@ -261,17 +310,22 @@ export class SkillTreeManager {
                 instructions: 'Look at this apple and identify the basic shapes within it'
               },
               duration: 90,
+              order: 2,
             },
           ],
-          estimatedDuration: 3,
+          totalDuration: 3,
+          objectives: [
+            { id: 'theory_obj_2', description: 'Understand shape construction', type: 'primary', required: true },
+          ],
         },
         practiceContent: {
           instructions: [
             {
-              step: 1,
+              id: 'practice_2_1',
               text: 'Start with a circle for the basic apple shape',
+              type: 'draw',
+              order: 1,
               highlightArea: { x: 150, y: 150, width: 200, height: 200 },
-              requiredAction: 'draw_base_circle',
               validation: {
                 type: 'shape_construction',
                 params: { requiredShape: 'circle', stage: 'base' },
@@ -279,10 +333,11 @@ export class SkillTreeManager {
               },
             },
             {
-              step: 2,
+              id: 'practice_2_2',
               text: 'Add the apple\'s indent at the top with curved lines',
+              type: 'draw',
+              order: 2,
               highlightArea: { x: 200, y: 150, width: 100, height: 50 },
-              requiredAction: 'add_apple_indent',
               validation: {
                 type: 'shape_construction',
                 params: { modification: 'indent', position: 'top' },
@@ -290,10 +345,11 @@ export class SkillTreeManager {
               },
             },
             {
-              step: 3,
+              id: 'practice_2_3',
               text: 'Draw the stem as a small rectangle',
+              type: 'draw',
+              order: 3,
               highlightArea: { x: 240, y: 130, width: 20, height: 30 },
-              requiredAction: 'add_stem',
               validation: {
                 type: 'shape_construction',
                 params: { component: 'stem', shape: 'rectangle' },
@@ -301,49 +357,52 @@ export class SkillTreeManager {
               },
             },
           ],
-          referenceImage: 'lesson_2_apple_reference',
-          guideLayers: [
-            {
-              id: 'construction_guides',
-              type: 'overlay',
-              visible: true,
-              opacity: 0.4,
-              data: { shapes: ['circle', 'construction_lines'] },
-            },
-          ],
           hints: [
             {
               id: 'hint_2_1',
-              triggerCondition: 'instruction_0_fail',
+              stepIndex: 0,
+              text: 'Don\'t aim for a perfect circle - organic shapes are more natural',
               content: 'Don\'t aim for a perfect circle - organic shapes are more natural',
-              type: 'tip',
+              triggerCondition: 'instruction_0_fail',
             },
           ],
-          toolsRequired: ['pencil'],
-          estimatedDuration: 6,
+          referenceImage: 'lesson_2_apple_reference',
+          canvas: {
+            width: 1024,
+            height: 768,
+            backgroundColor: '#ffffff',
+          },
+          expectedDuration: 6,
         },
         assessment: {
           criteria: [
             {
               id: 'construction_method',
+              name: 'Construction Method',
               description: 'Proper use of construction approach',
               weight: 0.5,
+              passingScore: 0.7,
               evaluationType: 'automatic',
             },
             {
               id: 'proportions',
+              name: 'Proportions',
               description: 'Correct proportional relationships',
               weight: 0.3,
+              passingScore: 0.7,
               evaluationType: 'automatic',
             },
             {
               id: 'completion',
+              name: 'Completion',
               description: 'Completed apple drawing',
               weight: 0.2,
+              passingScore: 0.7,
               evaluationType: 'automatic',
             },
           ],
           passingScore: 0.7,
+          maxAttempts: 3,
           bonusObjectives: [
             {
               id: 'bonus_variation',
@@ -352,17 +411,25 @@ export class SkillTreeManager {
             },
           ],
         },
+        rewards: {
+          xp: 125,
+          achievements: ['shape_constructor'],
+          unlocks: ['lesson_3_perspective'],
+        },
+        status: 'locked',
+        progress: 0,
+        attempts: 0,
+        timeSpent: 0,
+        // Backward compatibility
+        duration: 10,
         xpReward: 125,
-        unlockRequirements: [
-          { type: 'lesson', value: 'lesson_1_lines_shapes' },
-        ],
+        skillTreeId: 'fundamentals',
+        unlockRequirements: ['lesson_1_lines_shapes'],
         tags: ['construction', 'shapes', 'apple', 'forms'],
       },
 
       // Continue with remaining lessons...
-      // For brevity, I'll create simplified versions of the remaining lessons
-
-      ...this.createRemainingLessons(), // This would contain lessons 3-15
+      ...this.createRemainingLessons(),
     ];
 
     return lessons;
@@ -391,34 +458,40 @@ export class SkillTreeManager {
     lessonTemplates.forEach((template, index) => {
       const lesson: Lesson = {
         id: template.id,
-        skillTreeId: 'fundamentals',
         title: template.title,
         description: template.description,
-        thumbnailUrl: `${template.id}_thumb`,
-        duration: 12 + (index * 2), // Progressive difficulty
+        type: 'practice',
+        skillTree: 'fundamentals',
+        order: index + 3, // Start from 3 since we have lessons 1 and 2 above
+        estimatedTime: 12 + (index * 2), // Progressive difficulty
         difficulty: Math.min(5, Math.floor(index / 3) + 2) as 1 | 2 | 3 | 4 | 5,
-                order: index + 3, // Start from 3 since we have lessons 1 and 2 above
         prerequisites: index > 0 ? [lessonTemplates[index - 1].id] : ['lesson_2_construction'],
         objectives: [
-          { id: `obj_${index + 3}_1`, description: `Master ${template.title.toLowerCase()}`, completed: false },
+          { id: `obj_${index + 3}_1`, description: `Master ${template.title.toLowerCase()}`, completed: false, required: true },
         ],
         theoryContent: {
           segments: [
             {
+              id: `theory_${index + 3}_1`,
               type: 'text',
               content: { text: `Learn the principles of ${template.title.toLowerCase()}` },
               duration: 90,
+              order: 1,
             },
           ],
-          estimatedDuration: 3,
+          totalDuration: 3,
+          objectives: [
+            { id: `theory_obj_${index + 3}`, description: `Understand ${template.title.toLowerCase()}`, type: 'primary', required: true },
+          ],
         },
         practiceContent: {
           instructions: [
             {
-              step: 1,
+              id: `practice_${index + 3}_1`,
               text: `Apply ${template.title.toLowerCase()} techniques`,
+              type: 'draw',
+              order: 1,
               highlightArea: { x: 150, y: 150, width: 200, height: 200 },
-              requiredAction: 'practice_technique',
               validation: {
                 type: 'completion',
                 params: { minProgress: 0.8 },
@@ -426,30 +499,44 @@ export class SkillTreeManager {
               },
             },
           ],
-          referenceImage: `${template.id}_reference`,
-          guideLayers: [],
           hints: [],
-          toolsRequired: ['pencil'],
-          estimatedDuration: 8 + index,
+          referenceImage: `${template.id}_reference`,
+          canvas: {
+            width: 1024,
+            height: 768,
+            backgroundColor: '#ffffff',
+          },
+          expectedDuration: 8 + index,
         },
         assessment: {
           criteria: [
             {
               id: 'technique_application',
+              name: 'Technique Application',
               description: `Proper ${template.title.toLowerCase()} application`,
               weight: 1.0,
+              passingScore: 0.7,
               evaluationType: 'automatic',
             },
           ],
           passingScore: 0.7,
+          maxAttempts: 3,
           bonusObjectives: [],
         },
+        rewards: {
+          xp: template.xp,
+          achievements: [],
+          unlocks: [],
+        },
+        status: 'locked',
+        progress: 0,
+        attempts: 0,
+        timeSpent: 0,
+        // Backward compatibility
+        duration: 12 + (index * 2),
         xpReward: template.xp,
-        unlockRequirements: index > 0 ? [
-          { type: 'lesson', value: lessonTemplates[index - 1].id },
-        ] : [
-          { type: 'lesson', value: 'lesson_2_construction' },
-        ],
+        skillTreeId: 'fundamentals',
+        unlockRequirements: index > 0 ? [lessonTemplates[index - 1].id] : ['lesson_2_construction'],
         tags: [template.title.toLowerCase().replace(' ', '_')],
       };
 
@@ -477,17 +564,15 @@ export class SkillTreeManager {
     return null;
   }
 
-  // FIXED: Removed duplicate getAvailableLessons methods and combined functionality
   public getAvailableLessons(treeId?: string): Lesson[] {
     if (!this.userProgress) return [];
 
     const available: Lesson[] = [];
     const trees = treeId 
-      ? [this.skillTrees.get(treeId)].filter(Boolean)
+      ? [this.skillTrees.get(treeId)].filter(Boolean) as SkillTree[]
       : Array.from(this.skillTrees.values());
     
     for (const tree of trees) {
-      if (!tree) continue;
       for (const lesson of tree.lessons) {
         if (this.isLessonUnlocked(lesson)) {
           available.push(lesson);
@@ -508,29 +593,21 @@ export class SkillTreeManager {
       }
     }
 
-    // Check unlock requirements
-    for (const requirement of lesson.unlockRequirements) {
-      if (!this.meetsRequirement(requirement)) {
-        return false;
+    // Check unlock requirements (backward compatibility)
+    if (lesson.unlockRequirements) {
+      for (const requirement of lesson.unlockRequirements) {
+        if (!this.meetsRequirement(requirement)) {
+          return false;
+        }
       }
     }
 
     return true;
   }
 
-  private meetsRequirement(requirement: any): boolean {
-    // Simplified requirement checking
-    switch (requirement.type) {
-      case 'lesson':
-        return this.userProgress?.completedLessons.includes(requirement.value) || false;
-      case 'level':
-        // Would check user level
-        return true;
-      case 'xp':
-        return (this.userProgress?.totalXP || 0) >= requirement.value;
-      default:
-        return false;
-    }
+  private meetsRequirement(requirement: string): boolean {
+    // Simplified requirement checking for string requirements
+    return this.userProgress?.completedLessons.includes(requirement) || false;
   }
 
   public async completeLesson(lessonId: string, score: number): Promise<void> {
@@ -546,22 +623,22 @@ export class SkillTreeManager {
       this.userProgress.completedLessons.push(lessonId);
     }
 
-    // Add XP
-    this.userProgress.totalXP += lesson.xpReward;
+    // Add XP (use backward compatibility properties)
+    const xpReward = lesson.xpReward || lesson.rewards?.xp || 100;
+    this.userProgress.totalXP += xpReward;
 
     // Update skill tree progress
     let treeProgress = this.userProgress.skillTrees.find(
-      // FIXED: Added explicit type annotation for treeProgress parameter
-      (treeProgress: SkillTreeProgress) => treeProgress.skillTreeId === lesson.skillTreeId
+      (tp: SkillTreeProgress) => tp.skillTreeId === (lesson.skillTreeId || lesson.skillTree)
     );
 
     if (!treeProgress) {
       treeProgress = {
-        skillTreeId: lesson.skillTreeId,
-        unlockedLessons: [],
+        skillTreeId: lesson.skillTreeId || lesson.skillTree,
         completedLessons: [],
         totalXpEarned: 0,
         lastAccessedAt: new Date(),
+        completionPercentage: 0,
       };
       this.userProgress.skillTrees.push(treeProgress);
     }
@@ -570,7 +647,7 @@ export class SkillTreeManager {
       treeProgress.completedLessons.push(lessonId);
     }
 
-    treeProgress.totalXpEarned += lesson.xpReward;
+    treeProgress.totalXpEarned += xpReward;
     treeProgress.lastAccessedAt = new Date();
 
     // Update completion percentages
@@ -589,12 +666,12 @@ export class SkillTreeManager {
   private updateCompletionPercentages(): void {
     if (!this.userProgress) return;
 
-    // FIXED: Added explicit type annotation for progress parameter
     this.userProgress.skillTrees.forEach((progress: SkillTreeProgress) => {
       const tree = this.skillTrees.get(progress.skillTreeId);
       if (tree) {
         const completionRate = progress.completedLessons.length / tree.lessons.length;
         tree.completionPercentage = Math.round(completionRate * 100);
+        progress.completionPercentage = tree.completionPercentage;
       }
     });
   }

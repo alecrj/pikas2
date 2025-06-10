@@ -43,7 +43,6 @@ export class LessonEngine {
     return LessonEngine.instance;
   }
 
-  // FIXED: Added missing initialize method
   public async initialize(): Promise<void> {
     if (this.isInitialized) {
       return;
@@ -57,74 +56,78 @@ export class LessonEngine {
   private initializeValidators(): void {
     // Stroke count validator
     this.practiceValidators.set('stroke_count', (rule: ValidationRule, data: any) => {
+      if (!rule.params?.min || !rule.params?.max) return true;
       const strokeCount = data.strokes?.length || 0;
       return strokeCount >= rule.params.min && strokeCount <= rule.params.max;
     });
 
     // Color match validator
     this.practiceValidators.set('color_match', (rule: ValidationRule, data: any) => {
+      if (!rule.params?.targetColor || !rule.threshold) return true;
       const targetColor = rule.params.targetColor;
       const usedColors = data.colors || [];
       return usedColors.some((color: string) => 
-        this.colorDistance(color, targetColor) < rule.threshold
+        this.colorDistance(color, targetColor) < (rule.threshold || 0.1)
       );
     });
 
     // Shape accuracy validator
     this.practiceValidators.set('shape_accuracy', (rule: ValidationRule, data: any) => {
+      if (!rule.params?.targetShape || !rule.threshold) return true;
       const accuracy = this.calculateShapeAccuracy(data.strokes, rule.params.targetShape);
       return accuracy >= rule.threshold;
     });
 
     // Completion validator
     this.practiceValidators.set('completion', (rule: ValidationRule, data: any) => {
+      if (!rule.threshold) return true;
       const completionRate = data.completionRate || 0;
       return completionRate >= rule.threshold;
     });
 
     // Additional validators for SkillTreeManager compatibility
     this.practiceValidators.set('shape_construction', (rule: ValidationRule, data: any) => {
-      return this.validateShapeConstruction(data.strokes, rule.params);
+      return this.validateShapeConstruction(data.strokes, rule.params || {});
     });
 
     this.practiceValidators.set('line_detection', (rule: ValidationRule, data: any) => {
-      return this.validateLineDetection(data.strokes, rule.params);
+      return this.validateLineDetection(data.strokes, rule.params || {});
     });
 
     this.practiceValidators.set('point_placement', (rule: ValidationRule, data: any) => {
-      return this.validatePointPlacement(data.points, rule.params);
+      return this.validatePointPlacement(data.points, rule.params || {});
     });
 
     this.practiceValidators.set('perspective_lines', (rule: ValidationRule, data: any) => {
-      return this.validatePerspectiveLines(data.strokes, rule.params);
+      return this.validatePerspectiveLines(data.strokes, rule.params || {});
     });
 
     this.practiceValidators.set('shape_completion', (rule: ValidationRule, data: any) => {
-      return this.validateShapeCompletion(data.strokes, rule.params);
+      return this.validateShapeCompletion(data.strokes, rule.params || {});
     });
 
     this.practiceValidators.set('shading_element', (rule: ValidationRule, data: any) => {
-      return this.validateShadingElement(data.strokes, rule.params);
+      return this.validateShadingElement(data.strokes, rule.params || {});
     });
 
     this.practiceValidators.set('shading_gradation', (rule: ValidationRule, data: any) => {
-      return this.validateShadingGradation(data.strokes, rule.params);
+      return this.validateShadingGradation(data.strokes, rule.params || {});
     });
 
     this.practiceValidators.set('cast_shadow', (rule: ValidationRule, data: any) => {
-      return this.validateCastShadow(data.strokes, rule.params);
+      return this.validateCastShadow(data.strokes, rule.params || {});
     });
 
     this.practiceValidators.set('cylindrical_shading', (rule: ValidationRule, data: any) => {
-      return this.validateCylindricalShading(data.strokes, rule.params);
+      return this.validateCylindricalShading(data.strokes, rule.params || {});
     });
 
     this.practiceValidators.set('form_construction', (rule: ValidationRule, data: any) => {
-      return this.validateFormConstruction(data.strokes, rule.params);
+      return this.validateFormConstruction(data.strokes, rule.params || {});
     });
   }
 
-  // FIXED: Added missing validateStep method that contexts expect
+  // Added missing validateStep method that contexts expect
   public async validateStep(lesson: Lesson, stepIndex: number, userInput: any): Promise<{
     isValid: boolean;
     feedback?: string;
@@ -280,7 +283,10 @@ export class LessonEngine {
     // Preload theory content images/videos
     lesson.theoryContent.segments.forEach(segment => {
       if (segment.type === 'image' || segment.type === 'video') {
-        preloadPromises.push(this.preloadAsset(segment.content.url));
+        // Handle both string and object content types
+        if (typeof segment.content === 'object' && segment.content.url) {
+          preloadPromises.push(this.preloadAsset(segment.content.url));
+        }
       }
     });
 
@@ -384,7 +390,7 @@ export class LessonEngine {
     const duration = Date.now() - (this.lessonState.startTime || 0) - this.lessonState.pausedTime;
 
     // Calculate XP reward
-    let xpEarned = this.currentLesson.xpReward;
+    let xpEarned: number = this.currentLesson.xpReward || this.currentLesson.rewards?.xp || 100;
     if (assessmentResult.score >= 0.95) {
       xpEarned *= 1.5; // Perfect score bonus
     }
@@ -430,6 +436,16 @@ export class LessonEngine {
     }
 
     const assessment = this.currentLesson.assessment;
+    if (!assessment) {
+      // No assessment defined, return default passing result
+      return {
+        passed: true,
+        score: 0.8,
+        objectiveResults: {},
+        feedback: [],
+      };
+    }
+
     let totalScore = 0;
     let totalWeight = 0;
     const objectiveResults: Record<string, boolean> = {};
@@ -451,12 +467,14 @@ export class LessonEngine {
     const finalScore = totalWeight > 0 ? totalScore / totalWeight : 0;
     const passed = finalScore >= assessment.passingScore;
 
-    // Check bonus objectives
-    assessment.bonusObjectives.forEach(bonus => {
-      if (this.evaluateBonusObjective(bonus, data)) {
-        feedback.push(`Bonus achieved: ${bonus.description} (+${bonus.xpBonus} XP)`);
-      }
-    });
+    // Check bonus objectives if they exist
+    if (assessment.bonusObjectives) {
+      assessment.bonusObjectives.forEach(bonus => {
+        if (this.evaluateBonusObjective(bonus, data)) {
+          feedback.push(`Bonus achieved: ${bonus.description} (+${bonus.xpBonus} XP)`);
+        }
+      });
+    }
 
     // Map to learning objectives
     this.currentLesson.objectives.forEach(obj => {
@@ -563,9 +581,13 @@ export class LessonEngine {
       this.lessonState.currentInstruction
     ];
 
+    if (!currentInstruction) {
+      return { type: 'none' };
+    }
+
     // Check if user needs help
     const timeSinceStart = Date.now() - (this.lessonState.startTime || 0);
-    const expectedTime = currentInstruction.validation?.params.expectedTime || 30000;
+    const expectedTime = currentInstruction.validation?.params?.expectedTime || 30000;
 
     if (timeSinceStart > expectedTime * 1.5) {
       return {
