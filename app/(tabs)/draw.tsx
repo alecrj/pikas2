@@ -119,6 +119,15 @@ export default function DrawScreen() {
   
   const styles = createStyles(theme);
 
+  // FIXED: Move updateCanvasTransform BEFORE it's used in gesture handlers
+  const updateCanvasTransform = useCallback(() => {
+    if (professionalCanvas.current) {
+      professionalCanvas.current.setZoom(scale.value);
+      professionalCanvas.current.setPan(translateX.value, translateY.value);
+      professionalCanvas.current.setRotation(rotation.value);
+    }
+  }, [scale.value, translateX.value, translateY.value, rotation.value]);
+
   useEffect(() => {
     if (canvasRef.current && !professionalCanvas.current) {
       // Initialize professional canvas with Skia
@@ -247,14 +256,6 @@ export default function DrawScreen() {
       runOnJS(updateCanvasTransform)();
     },
   });
-
-  const updateCanvasTransform = () => {
-    if (professionalCanvas.current) {
-      professionalCanvas.current.setZoom(scale.value);
-      professionalCanvas.current.setPan(translateX.value, translateY.value);
-      professionalCanvas.current.setRotation(rotation.value);
-    }
-  };
 
   const animatedCanvasStyle = useAnimatedStyle(() => ({
     transform: [
