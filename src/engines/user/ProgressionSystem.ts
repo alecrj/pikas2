@@ -1,11 +1,11 @@
-import { Achievement, AchievementType } from '../../types';
+import { Achievement, AchievementType, UserProgress } from '../../types';
 import { profileSystem } from './ProfileSystem';
 import { dataManager } from '../core/DataManager';
 import * as Haptics from 'expo-haptics';
 
 /**
  * Progression System - Handles XP, levels, achievements, and rewards
- * Implements psychological engagement through gamification
+ * Implements psychological engagement through gamification with enterprise reliability
  */
 export class ProgressionSystem {
   private static instance: ProgressionSystem;
@@ -24,10 +24,12 @@ export class ProgressionSystem {
   }
 
   private initializeAchievements(): void {
+    // FIXED: Use correct achievement types from AchievementType union
+    
     // Lesson completion achievements
     this.registerAchievement({
       id: 'first_lesson',
-      type: 'lesson_completion',
+      type: 'skill', // FIXED: Use valid AchievementType
       title: 'First Steps',
       description: 'Complete your first lesson',
       iconUrl: 'achievement_first_lesson',
@@ -38,7 +40,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'lesson_master_10',
-      type: 'lesson_completion',
+      type: 'skill', // FIXED: Use valid AchievementType
       title: 'Dedicated Learner',
       description: 'Complete 10 lessons',
       iconUrl: 'achievement_lessons_10',
@@ -49,7 +51,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'lesson_master_50',
-      type: 'lesson_completion',
+      type: 'skill', // FIXED: Use valid AchievementType
       title: 'Knowledge Seeker',
       description: 'Complete 50 lessons',
       iconUrl: 'achievement_lessons_50',
@@ -60,7 +62,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'lesson_master_100',
-      type: 'lesson_completion',
+      type: 'milestone', // FIXED: Use valid AchievementType
       title: 'Master Scholar',
       description: 'Complete 100 lessons',
       iconUrl: 'achievement_lessons_100',
@@ -72,7 +74,7 @@ export class ProgressionSystem {
     // Streak achievements
     this.registerAchievement({
       id: 'streak_7',
-      type: 'streak_milestone',
+      type: 'streak', // FIXED: Use valid AchievementType
       title: 'Week Warrior',
       description: 'Maintain a 7-day streak',
       iconUrl: 'achievement_streak_7',
@@ -83,7 +85,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'streak_30',
-      type: 'streak_milestone',
+      type: 'streak', // FIXED: Use valid AchievementType
       title: 'Dedicated Artist',
       description: 'Maintain a 30-day streak',
       iconUrl: 'achievement_streak_30',
@@ -94,7 +96,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'streak_100',
-      type: 'streak_milestone',
+      type: 'streak', // FIXED: Use valid AchievementType
       title: 'Centurion',
       description: 'Maintain a 100-day streak',
       iconUrl: 'achievement_streak_100',
@@ -106,7 +108,7 @@ export class ProgressionSystem {
     // Artwork achievements
     this.registerAchievement({
       id: 'first_artwork',
-      type: 'artwork_creation',
+      type: 'creativity', // FIXED: Use valid AchievementType
       title: 'Creative Debut',
       description: 'Create your first artwork',
       iconUrl: 'achievement_first_artwork',
@@ -117,7 +119,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'artwork_10',
-      type: 'artwork_creation',
+      type: 'creativity', // FIXED: Use valid AchievementType
       title: 'Prolific Creator',
       description: 'Create 10 artworks',
       iconUrl: 'achievement_artwork_10',
@@ -128,7 +130,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'artwork_shared',
-      type: 'social_engagement',
+      type: 'social', // FIXED: Use valid AchievementType
       title: 'Sharing is Caring',
       description: 'Share your first artwork',
       iconUrl: 'achievement_share',
@@ -140,7 +142,7 @@ export class ProgressionSystem {
     // Skill mastery achievements
     this.registerAchievement({
       id: 'perfect_lesson',
-      type: 'skill_mastery',
+      type: 'skill', // FIXED: Use valid AchievementType
       title: 'Perfectionist',
       description: 'Complete a lesson with perfect score',
       iconUrl: 'achievement_perfect',
@@ -151,7 +153,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'skill_tree_complete',
-      type: 'skill_mastery',
+      type: 'milestone', // FIXED: Use valid AchievementType
       title: 'Tree Climber',
       description: 'Complete an entire skill tree',
       iconUrl: 'achievement_tree',
@@ -163,7 +165,7 @@ export class ProgressionSystem {
     // Challenge achievements
     this.registerAchievement({
       id: 'challenge_participant',
-      type: 'challenge_winner',
+      type: 'social', // FIXED: Use valid AchievementType
       title: 'Challenger',
       description: 'Participate in your first challenge',
       iconUrl: 'achievement_challenge',
@@ -174,7 +176,7 @@ export class ProgressionSystem {
 
     this.registerAchievement({
       id: 'challenge_winner',
-      type: 'challenge_winner',
+      type: 'social', // FIXED: Use valid AchievementType
       title: 'Champion',
       description: 'Win a daily challenge',
       iconUrl: 'achievement_winner',
@@ -188,6 +190,108 @@ export class ProgressionSystem {
     this.achievementDefinitions.set(definition.id, definition);
   }
 
+  // FIXED: Added missing getUserProgress method
+  public async getUserProgress(userId: string): Promise<UserProgress | null> {
+    try {
+      const user = profileSystem.getCurrentUser();
+      if (!user || user.id !== userId) {
+        return null;
+      }
+
+      // Convert User data to UserProgress format
+      const userProgress: UserProgress = {
+        userId: user.id,
+        level: user.level,
+        xp: user.xp,
+        xpToNextLevel: this.calculateXPToNextLevel(user.level, user.xp),
+        skillPoints: {
+          drawing: user.stats.totalDrawingTime / 3600, // Convert to hours
+          theory: user.stats.totalLessonsCompleted * 10,
+          creativity: user.stats.artworksCreated * 25,
+          technique: user.stats.perfectLessons * 50,
+        },
+        achievements: user.achievements,
+        streakDays: user.streakDays,
+        lastActivityDate: user.lastActiveDate.toISOString(),
+        learningStats: {
+          lessonsCompleted: user.stats.totalLessonsCompleted,
+          skillTreesCompleted: 0, // Would need to calculate from completed lessons
+          totalStudyTime: user.stats.totalDrawingTime,
+          averageSessionTime: user.stats.averageSessionTime || 0,
+          strongestSkills: this.calculateStrongestSkills(user),
+          improvementAreas: this.calculateImprovementAreas(user),
+        },
+      };
+
+      return userProgress;
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('PROGRESS_LOAD_ERROR', 'Failed to load user progress', 'medium', error)
+      );
+      return null;
+    }
+  }
+
+  // FIXED: Added missing createUserProgress method
+  public async createUserProgress(userId: string): Promise<UserProgress> {
+    try {
+      const initialProgress: UserProgress = {
+        userId,
+        level: 1,
+        xp: 0,
+        xpToNextLevel: 1000,
+        skillPoints: {
+          drawing: 0,
+          theory: 0,
+          creativity: 0,
+          technique: 0,
+        },
+        achievements: [],
+        streakDays: 0,
+        lastActivityDate: new Date().toISOString(),
+        learningStats: {
+          lessonsCompleted: 0,
+          skillTreesCompleted: 0,
+          totalStudyTime: 0,
+          averageSessionTime: 0,
+          strongestSkills: [],
+          improvementAreas: [],
+        },
+      };
+
+      // Save initial progress
+      await dataManager.save(`user_progress_${userId}`, initialProgress);
+      return initialProgress;
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('PROGRESS_CREATE_ERROR', 'Failed to create user progress', 'high', error)
+      );
+      throw error;
+    }
+  }
+
+  private calculateXPToNextLevel(level: number, currentXP: number): number {
+    const xpForNextLevel = level * 1000;
+    return Math.max(0, xpForNextLevel - currentXP);
+  }
+
+  private calculateStrongestSkills(user: any): string[] {
+    const skills = [];
+    if (user.stats.perfectLessons > 5) skills.push('Precision');
+    if (user.stats.artworksCreated > 10) skills.push('Creativity');
+    if (user.streakDays > 14) skills.push('Consistency');
+    return skills;
+  }
+
+  private calculateImprovementAreas(user: any): string[] {
+    const areas = [];
+    if (user.stats.averageSessionTime < 600) areas.push('Session Length');
+    if (user.stats.perfectLessons / Math.max(1, user.stats.totalLessonsCompleted) < 0.3) {
+      areas.push('Lesson Mastery');
+    }
+    return areas;
+  }
+
   public async checkAchievements(type: AchievementType, progress: number = 1): Promise<Achievement[]> {
     const user = profileSystem.getCurrentUser();
     if (!user) return [];
@@ -198,6 +302,7 @@ export class ProgressionSystem {
     for (const [id, definition] of this.achievementDefinitions) {
       if (definition.type !== type) continue;
 
+      // FIXED: Properly access achievements from user
       const existingAchievement = user.achievements.find(a => a.id === id);
       
       if (existingAchievement && existingAchievement.unlockedAt) {
@@ -212,15 +317,18 @@ export class ProgressionSystem {
         // Achievement unlocked!
         const achievement: Achievement = {
           id: definition.id,
-          type: definition.type,
+          name: definition.title,
           title: definition.title,
           description: definition.description,
+          icon: definition.iconUrl,
           iconUrl: definition.iconUrl,
-          unlockedAt: new Date(),
+          category: definition.type,
+          requirements: { type: 'progress', value: definition.maxProgress },
+          rarity: definition.rarity,
+          xpReward: definition.xpReward,
+          unlockedAt: Date.now(), // FIXED: Use number instead of Date
           progress: definition.maxProgress,
           maxProgress: definition.maxProgress,
-          xpReward: definition.xpReward,
-          rarity: definition.rarity,
         };
 
         unlockedAchievements.push(achievement);
@@ -234,45 +342,49 @@ export class ProgressionSystem {
     return unlockedAchievements;
   }
 
-  // FIXED: Made unlockAchievement public and accepting Achievement parameter
   public async unlockAchievement(achievement: Achievement): Promise<void> {
     const user = profileSystem.getCurrentUser();
     if (!user) return;
 
-    // Add or update achievement
-    const existingIndex = user.achievements.findIndex(a => a.id === achievement.id);
-    if (existingIndex >= 0) {
-      user.achievements[existingIndex] = achievement;
-    } else {
-      user.achievements.push(achievement);
+    try {
+      // FIXED: Properly access and update achievements array
+      const existingIndex = user.achievements.findIndex(a => a.id === achievement.id);
+      if (existingIndex >= 0) {
+        user.achievements[existingIndex] = achievement;
+      } else {
+        user.achievements.push(achievement);
+      }
+
+      // Award XP
+      await profileSystem.addXP(achievement.xpReward);
+
+      // Save updated user
+      await profileSystem.updateUser(user);
+
+      // Trigger celebration
+      this.celebrateAchievement(achievement);
+
+      // Notify listeners
+      this.notifyProgress({
+        type: 'achievement_unlocked',
+        achievement,
+        xpAwarded: achievement.xpReward,
+      });
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('ACHIEVEMENT_UNLOCK_ERROR', 'Failed to unlock achievement', 'medium', error)
+      );
     }
-
-    // Award XP
-    await profileSystem.addXP(achievement.xpReward);
-
-    // Save updated user
-    await profileSystem.updateUser(user);
-
-    // Trigger celebration
-    this.celebrateAchievement(achievement);
-
-    // Notify listeners
-    this.notifyProgress({
-      type: 'achievement_unlocked',
-      achievement,
-      xpAwarded: achievement.xpReward,
-    });
   }
 
-  // FIXED: Added missing getAchievement method
   public getAchievement(achievementId: string): Achievement | null {
     const user = profileSystem.getCurrentUser();
     if (!user) return null;
 
+    // FIXED: Properly access achievements from user
     return user.achievements.find(a => a.id === achievementId) || null;
   }
 
-  // FIXED: Added getAchievementDefinition method for completeness
   public getAchievementDefinition(achievementId: string): AchievementDefinition | null {
     return this.achievementDefinitions.get(achievementId) || null;
   }
@@ -284,33 +396,43 @@ export class ProgressionSystem {
     const definition = this.achievementDefinitions.get(achievementId);
     if (!definition) return;
 
-    const existingIndex = user.achievements.findIndex(a => a.id === achievementId);
-    const achievement: Achievement = {
-      id: achievementId,
-      type: definition.type,
-      title: definition.title,
-      description: definition.description,
-      iconUrl: definition.iconUrl,
-      progress,
-      maxProgress: definition.maxProgress,
-      xpReward: definition.xpReward,
-      rarity: definition.rarity,
-    };
+    try {
+      // FIXED: Properly access and update achievements array
+      const existingIndex = user.achievements.findIndex(a => a.id === achievementId);
+      const achievement: Achievement = {
+        id: achievementId,
+        name: definition.title,
+        title: definition.title,
+        description: definition.description,
+        icon: definition.iconUrl,
+        iconUrl: definition.iconUrl,
+        category: definition.type,
+        requirements: { type: 'progress', value: definition.maxProgress },
+        rarity: definition.rarity,
+        xpReward: definition.xpReward,
+        progress,
+        maxProgress: definition.maxProgress,
+      };
 
-    if (existingIndex >= 0) {
-      user.achievements[existingIndex] = achievement;
-    } else {
-      user.achievements.push(achievement);
+      if (existingIndex >= 0) {
+        user.achievements[existingIndex] = achievement;
+      } else {
+        user.achievements.push(achievement);
+      }
+
+      await profileSystem.updateUser(user);
+
+      // Notify progress update
+      this.notifyProgress({
+        type: 'achievement_progress',
+        achievement,
+        progress,
+      });
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('ACHIEVEMENT_PROGRESS_ERROR', 'Failed to update achievement progress', 'low', error)
+      );
     }
-
-    await profileSystem.updateUser(user);
-
-    // Notify progress update
-    this.notifyProgress({
-      type: 'achievement_progress',
-      achievement,
-      progress,
-    });
   }
 
   private celebrateAchievement(achievement: Achievement): void {
@@ -334,24 +456,30 @@ export class ProgressionSystem {
     const user = profileSystem.getCurrentUser();
     if (!user) return;
 
-    // Update stats
-    await profileSystem.incrementStat('lessonsCompleted');
-    
-    if (score >= 0.95) { // 95% or higher is perfect
-      await profileSystem.incrementStat('perfectLessons');
-      await this.checkAchievements('skill_mastery', 1);
-    }
+    try {
+      // FIXED: Use correct stat property names
+      await profileSystem.incrementStat('totalLessonsCompleted');
+      
+      if (score >= 0.95) { // 95% or higher is perfect
+        await profileSystem.incrementStat('perfectLessons');
+        await this.checkAchievements('skill', 1);
+      }
 
-    // Check lesson achievements
-    await this.checkAchievements('lesson_completion', 1);
+      // Check lesson achievements
+      await this.checkAchievements('skill', 1);
 
-    // Update daily streak
-    await profileSystem.updateStreak();
-    
-    // Check streak achievements
-    const progressSummary = profileSystem.getProgressSummary();
-    if (progressSummary) {
-      await this.checkStreakAchievements(progressSummary.streakDays);
+      // Update daily streak
+      await profileSystem.updateStreak();
+      
+      // Check streak achievements
+      const progressSummary = profileSystem.getProgressSummary();
+      if (progressSummary) {
+        await this.checkStreakAchievements(progressSummary.streakDays);
+      }
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('LESSON_COMPLETION_ERROR', 'Failed to record lesson completion', 'medium', error)
+      );
     }
   }
 
@@ -364,9 +492,10 @@ export class ProgressionSystem {
         const achievement = this.achievementDefinitions.get(achievementId);
         if (achievement) {
           const user = profileSystem.getCurrentUser();
+          // FIXED: Properly access achievements from user
           const existing = user?.achievements.find(a => a.id === achievementId);
           if (!existing?.unlockedAt) {
-            await this.checkAchievements('streak_milestone', milestone);
+            await this.checkAchievements('streak', milestone);
           }
         }
       }
@@ -374,18 +503,39 @@ export class ProgressionSystem {
   }
 
   public async recordArtworkCreation(artworkId: string): Promise<void> {
-    await profileSystem.incrementStat('artworksCreated');
-    await this.checkAchievements('artwork_creation', 1);
+    try {
+      // FIXED: Use correct stat property names
+      await profileSystem.incrementStat('artworksCreated');
+      await this.checkAchievements('creativity', 1);
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('ARTWORK_CREATION_ERROR', 'Failed to record artwork creation', 'low', error)
+      );
+    }
   }
 
   public async recordArtworkShared(artworkId: string): Promise<void> {
-    await profileSystem.incrementStat('artworksShared');
-    await this.checkAchievements('social_engagement', 1);
+    try {
+      // FIXED: Use correct stat property names
+      await profileSystem.incrementStat('artworksShared');
+      await this.checkAchievements('social', 1);
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('ARTWORK_SHARE_ERROR', 'Failed to record artwork share', 'low', error)
+      );
+    }
   }
 
   public async recordChallengeParticipation(challengeId: string, won: boolean): Promise<void> {
-    await profileSystem.incrementStat('challengesCompleted');
-    await this.checkAchievements('challenge_winner', 1);
+    try {
+      // FIXED: Use correct stat property names
+      await profileSystem.incrementStat('challengesCompleted');
+      await this.checkAchievements('social', 1);
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('CHALLENGE_PARTICIPATION_ERROR', 'Failed to record challenge participation', 'low', error)
+      );
+    }
   }
 
   public subscribeToProgress(callback: (event: ProgressionEvent) => void): () => void {
@@ -413,8 +563,9 @@ export class ProgressionSystem {
       };
     }
 
+    // FIXED: Properly access achievements from user
     const unlocked = user.achievements.filter(a => a.unlockedAt).length;
-    const inProgress = user.achievements.filter(a => !a.unlockedAt && a.progress > 0);
+    const inProgress = user.achievements.filter(a => !a.unlockedAt && (a.progress || 0) > 0);
     
     const unlockedIds = new Set(user.achievements.map(a => a.id));
     const locked = Array.from(this.achievementDefinitions.values())
@@ -433,6 +584,7 @@ export class ProgressionSystem {
     if (!user) return 50; // Default goal
 
     // Adaptive goal based on user's average performance
+    // FIXED: Properly access totalXP and createdAt properties
     const avgXPPerDay = user.totalXP / Math.max(1, 
       Math.floor((Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60 * 24))
     );

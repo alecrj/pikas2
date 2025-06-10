@@ -123,6 +123,21 @@ export class ChallengeSystem {
       challenge => now >= challenge.startDate && now < challenge.endDate
     );
   }
+  
+  /**
+   * Get active challenge by type - FIXED: Added missing method
+   */
+  public getActiveChallenge(type: 'daily' | 'weekly' | 'monthly' | 'special'): Challenge | null {
+    try {
+      const activeChallenges = this.getAllActiveChallenges();
+      const challengeOfType = activeChallenges.find(challenge => challenge.type === type);
+      return challengeOfType || null;
+    } catch (error) {
+      console.error(`Failed to get active ${type} challenge:`, error);
+      return null;
+    }
+  }
+  
 
   public getChallenge(challengeId: string): Challenge | null {
     return this.challenges.get(challengeId) || null;

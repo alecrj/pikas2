@@ -4,52 +4,13 @@ import {
   LessonState,
   SkillTree,
   LearningProgress,
+  LearningContextType,
 } from '../types';
 import { skillTreeManager } from '../engines/learning/SkillTreeManager';
 import { lessonEngine } from '../engines/learning/LessonEngine';
 import { progressTracker } from '../engines/learning/ProgressTracker';
 import { dataManager } from '../engines/core/DataManager';
 import { errorHandler } from '../engines/core/ErrorHandler';
-
-export interface LearningContextType {
-  currentLesson: Lesson | null;
-  lessonState: LessonState | null;
-  isLoadingLesson: boolean;
-
-  skillTrees: SkillTree[];
-  availableLessons: Lesson[];
-  unlockedLessons: string[]; // FIXED: This should be string[] (lesson IDs), not Lesson[]
-
-  learningProgress: LearningProgress | null;
-  completedLessons: string[];
-  currentStreak: number;
-
-  recommendedLesson: Lesson | null;
-  insights: Array<{
-    id: string;
-    type: 'improvement' | 'achievement' | 'suggestion';
-    title: string;
-    description: string;
-    actionable: boolean;
-  }>;
-
-  currentSkillTree: SkillTree | null;
-  setCurrentSkillTree: (skillTree: SkillTree | null) => void;
-
-  startLesson: (lesson: Lesson) => Promise<void>;
-  pauseLesson: () => Promise<void>;
-  resumeLesson: () => Promise<void>;
-  completeLesson: (score?: number) => Promise<void>;
-  exitLesson: () => Promise<void>;
-
-  updateProgress: (stepIndex: number, completed: boolean) => Promise<void>;
-  addHint: (hint: string) => void;
-  validateStep: (stepIndex: number, userInput: any) => Promise<boolean>;
-
-  getLesson: (lessonId: string) => Lesson | null;
-  getNextLesson: () => Lesson | null;
-  checkUnlockRequirements: (lessonId: string) => boolean;
-}
 
 const LearningContext = createContext<LearningContextType | undefined>(undefined);
 
@@ -59,12 +20,14 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [isLoadingLesson, setIsLoadingLesson] = useState(false);
   const [skillTrees, setSkillTrees] = useState<SkillTree[]>([]);
   const [availableLessons, setAvailableLessons] = useState<Lesson[]>([]);
-  const [unlockedLessons, setUnlockedLessons] = useState<string[]>([]); // FIXED: string[] not Lesson[]
+  const [unlockedLessons, setUnlockedLessons] = useState<string[]>([]);
   const [learningProgress, setLearningProgress] = useState<LearningProgress | null>(null);
   const [completedLessons, setCompletedLessons] = useState<string[]>([]);
   const [currentStreak, setCurrentStreak] = useState(0);
 
   const [recommendedLesson, setRecommendedLesson] = useState<Lesson | null>(null);
+  // FIXED: Added missing recommendedLessons property
+  const [recommendedLessons, setRecommendedLessons] = useState<Lesson[]>([]);
   const [currentSkillTree, setCurrentSkillTree] = useState<SkillTree | null>(null);
   const [insights, setInsights] = useState<Array<{
     id: string;
@@ -105,7 +68,7 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
         setCurrentStreak(progress.currentStreak);
       }
 
-      // FIXED: Get unlocked lesson IDs, not full Lesson objects
+      // Get unlocked lesson IDs
       const unlockedLessonObjects = skillTreeManager.getUnlockedLessons();
       const unlockedLessonIds = unlockedLessonObjects.map(lesson => lesson.id);
       setUnlockedLessons(unlockedLessonIds);
@@ -123,21 +86,25 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const updateRecommendations = () => {
     try {
-      const recommended = progressTracker.getRecommendedLessons(1);
-      if (recommended.length > 0) {
-        const lesson = skillTreeManager.getLesson(recommended[0]);
-        setRecommendedLesson(lesson);
-      } else {
-        setRecommendedLesson(null);
-      }
+      const recommended = progressTracker.getRecommendedLessons(5); // Get top 5 recommendations
+      const recommendedLessonObjects = recommended
+        .map(lessonId => skillTreeManager.getLesson(lessonId))
+        .filter((lesson): lesson is Lesson => lesson !== null);
+      
+      // FIXED: Update both single recommendation and recommendations array
+      setRecommendedLessons(recommendedLessonObjects);
+      setRecommendedLesson(recommendedLessonObjects.length > 0 ? recommendedLessonObjects[0] : null);
     } catch (error) {
       console.warn('Failed to update recommendations:', error);
+      setRecommendedLessons([]);
+      setRecommendedLesson(null);
     }
   };
 
   const generateInsights = () => {
     try {
       const newInsights = [];
+      
       if (currentStreak >= 3) {
         newInsights.push({
           id: 'streak_achievement',
@@ -147,6 +114,7 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
           actionable: false,
         });
       }
+      
       if (completedLessons.length >= 5) {
         newInsights.push({
           id: 'skill_development',
@@ -156,6 +124,7 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
           actionable: true,
         });
       }
+      
       if (recommendedLesson) {
         newInsights.push({
           id: 'next_lesson',
@@ -165,9 +134,27 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
           actionable: true,
         });
       }
+      
+      // Add performance insights
+      if (learningProgress) {
+        const averageProgress = learningProgress.completedLessons.length > 0 ? 
+          learningProgress.totalXP / learningProgress.completedLessons.length : 0;
+        
+        if (averageProgress > 80) {
+          newInsights.push({
+            id: 'high_performance',
+            type: 'achievement' as const,
+            title: 'Excellence in Learning',
+            description: 'You\'re averaging high scores! Consider more challenging lessons.',
+            actionable: true,
+          });
+        }
+      }
+      
       setInsights(newInsights);
     } catch (error) {
       console.warn('Failed to generate insights:', error);
+      setInsights([]);
     }
   };
 
@@ -281,7 +268,7 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   const updateProgress = async (stepIndex: number, completed: boolean) => {
-    if (!lessonState) return;
+    if (!lessonState || !currentLesson) return;
     try {
       const updatedState = {
         ...lessonState,
@@ -293,12 +280,10 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
             : lessonState.practiceProgress.completedSteps,
         },
       };
-      const totalSteps = currentLesson?.practiceContent.instructions.length || 1;
+      const totalSteps = currentLesson.practiceContent.instructions.length || 1;
       updatedState.overallProgress = (updatedState.practiceProgress.completedSteps.length / totalSteps) * 100;
       setLessonState(updatedState);
-      if (currentLesson) {
-        await dataManager.save(`lesson_state_${currentLesson.id}`, updatedState);
-      }
+      await dataManager.save(`lesson_state_${currentLesson.id}`, updatedState);
     } catch (error) {
       errorHandler.handleError(
         errorHandler.createError('PROGRESS_UPDATE_ERROR', 'Failed to update progress', 'low', error)
@@ -318,7 +303,6 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
     setLessonState(updatedState);
   };
 
-  // FIXED: Now returns boolean by result.isValid
   const validateStep = async (
     stepIndex: number,
     userInput: any
@@ -348,6 +332,7 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
     return skillTreeManager.checkUnlockRequirements(lessonId);
   };
 
+  // FIXED: Ensure all required properties are included in context value
   const value: LearningContextType = {
     currentLesson,
     lessonState,
@@ -362,6 +347,7 @@ export const LearningProvider: React.FC<{ children: ReactNode }> = ({ children }
     currentStreak,
 
     recommendedLesson,
+    recommendedLessons, // FIXED: Added missing property
     insights,
     currentSkillTree,
     setCurrentSkillTree,

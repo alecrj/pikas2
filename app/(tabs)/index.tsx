@@ -13,9 +13,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../src/contexts/ThemeContext';
 import { useUserProgress, useProgress } from '../../src/contexts/UserProgressContext';
 import { useLearning } from '../../src/contexts/LearningContext';
-import { useLearning as useLessonContext } from '../../src/contexts/LearningContext';
 import { challengeSystem } from '../../src/engines/community/ChallengeSystem';
-import { typography } from '../../src/constants/typography'; // FIXED: Import typography
+import { typography } from '../../src/constants/typography';
 import * as Haptics from 'expo-haptics';
 import {
   Zap,
@@ -26,18 +25,20 @@ import {
   Palette,
   Users,
   TrendingUp,
-  BookOpen, // FIXED: Moved import to top
+  BookOpen,
 } from 'lucide-react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { colors, spacing, borderRadius } = useTheme(); // FIXED: Removed typography from theme
-  const { user, isLoading, dailyGoalProgress, checkDailyStreak } = useUserProgress();
+  const { colors, spacing, borderRadius } = useTheme();
+  
+  // FIXED: Use separate hooks for different data sources
+  const { user, isLoading, getDailyGoalProgress, checkDailyStreak } = useUserProgress();
   const { level, xp, xpToNextLevel, xpProgress, streakDays } = useProgress();
-  const { recommendedLessons, learningProgress } = useLearning();
-  const { recommendedLesson, insights } = useLessonContext();
+  const { recommendedLesson, learningProgress, insights } = useLearning();
+  
   const [dailyChallenge, setDailyChallenge] = React.useState<any>(null);
 
   useEffect(() => {
@@ -45,8 +46,15 @@ export default function HomeScreen() {
     checkDailyStreak();
     
     // Load daily challenge
-    const challenge = challengeSystem.getActiveChallenge('daily');
-    setDailyChallenge(challenge);
+    try {
+      // FIXED: Use getAllActiveChallenges instead of getActiveChallenge
+      const challenges = challengeSystem.getAllActiveChallenges();
+      const dailyChallenges = challenges.filter(c => c.type === 'daily');
+      setDailyChallenge(dailyChallenges.length > 0 ? dailyChallenges[0] : null);
+    } catch (error) {
+      console.warn('Failed to load daily challenge:', error);
+      setDailyChallenge(null);
+    }
   }, []);
 
   if (isLoading) {
@@ -80,6 +88,9 @@ export default function HomeScreen() {
     router.push('/gallery');
   };
 
+  // FIXED: Calculate daily goal progress safely
+  const dailyGoalProgress = getDailyGoalProgress();
+
   return (
     <ScrollView 
       style={[styles.container, { backgroundColor: colors.background }]}
@@ -90,8 +101,14 @@ export default function HomeScreen() {
         <Text style={[styles.welcomeText, { color: colors.textSecondary }]}>
           Welcome back,
         </Text>
-        {/* FIXED: Applied typography styles separately */}
-        <Text style={[styles.userName, { color: colors.text, fontSize: typography.h2.fontSize, fontWeight: typography.h2.fontWeight }]}>
+        <Text style={[
+          styles.userName, 
+          { 
+            color: colors.text, 
+            fontSize: typography.h2.fontSize, 
+            fontWeight: typography.h2.fontWeight 
+          }
+        ]}>
           {user.displayName}
         </Text>
       </View>
@@ -106,8 +123,13 @@ export default function HomeScreen() {
         >
           <View style={styles.progressHeader}>
             <View>
-              {/* FIXED: Applied typography styles separately */}
-              <Text style={[styles.levelText, { fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
+              <Text style={[
+                styles.levelText, 
+                { 
+                  fontSize: typography.h3.fontSize, 
+                  fontWeight: typography.h3.fontWeight 
+                }
+              ]}>
                 Level {level}
               </Text>
               <Text style={styles.xpText}>
@@ -125,7 +147,7 @@ export default function HomeScreen() {
               <View 
                 style={[
                   styles.progressBarFill,
-                  { width: `${xpProgress}%` }
+                  { width: `${Math.min(100, xpProgress * 100)}%` }
                 ]}
               />
             </View>
@@ -134,7 +156,7 @@ export default function HomeScreen() {
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Target size={20} color="white" />
-              <Text style={styles.statValue}>{dailyGoalProgress}%</Text>
+              <Text style={styles.statValue}>{Math.round(dailyGoalProgress)}%</Text>
               <Text style={styles.statLabel}>Daily Goal</Text>
             </View>
             <View style={styles.statItem}>
@@ -147,7 +169,8 @@ export default function HomeScreen() {
             <View style={styles.statItem}>
               <Trophy size={20} color="white" />
               <Text style={styles.statValue}>
-                {user.achievements.filter(a => a.unlockedAt).length}
+                {/* FIXED: Access achievements from progress context */}
+                {useProgress().achievements.filter(a => a.unlockedAt).length}
               </Text>
               <Text style={styles.statLabel}>Achievements</Text>
             </View>
@@ -157,8 +180,14 @@ export default function HomeScreen() {
 
       {/* Quick Actions */}
       <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
-        {/* FIXED: Applied typography styles separately */}
-        <Text style={[styles.sectionTitle, { color: colors.text, fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
+        <Text style={[
+          styles.sectionTitle, 
+          { 
+            color: colors.text, 
+            fontSize: typography.h3.fontSize, 
+            fontWeight: typography.h3.fontWeight 
+          }
+        ]}>
           Quick Actions
         </Text>
         
@@ -232,8 +261,14 @@ export default function HomeScreen() {
       {/* Daily Challenge */}
       {dailyChallenge && (
         <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
-          {/* FIXED: Applied typography styles separately */}
-          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
+          <Text style={[
+            styles.sectionTitle, 
+            { 
+              color: colors.text, 
+              fontSize: typography.h3.fontSize, 
+              fontWeight: typography.h3.fontWeight 
+            }
+          ]}>
             Today's Challenge
           </Text>
           
@@ -259,8 +294,13 @@ export default function HomeScreen() {
             <View style={styles.challengeContent}>
               <Trophy size={32} color="white" />
               <View style={styles.challengeText}>
-                {/* FIXED: Applied typography styles separately */}
-                <Text style={[styles.challengeTitle, { fontSize: typography.h4.fontSize, fontWeight: typography.h4.fontWeight }]}>
+                <Text style={[
+                  styles.challengeTitle, 
+                  { 
+                    fontSize: typography.h4.fontSize, 
+                    fontWeight: typography.h4.fontWeight 
+                  }
+                ]}>
                   {dailyChallenge.theme}
                 </Text>
                 <Text style={styles.challengeDescription}>
@@ -276,8 +316,14 @@ export default function HomeScreen() {
       {/* Learning Insights */}
       {insights.length > 0 && (
         <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
-          {/* FIXED: Applied typography styles separately */}
-          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
+          <Text style={[
+            styles.sectionTitle, 
+            { 
+              color: colors.text, 
+              fontSize: typography.h3.fontSize, 
+              fontWeight: typography.h3.fontWeight 
+            }
+          ]}>
             Insights
           </Text>
           
@@ -309,7 +355,6 @@ export default function HomeScreen() {
                 <Text style={[styles.insightTitle, { color: colors.text }]}>
                   {insight.title}
                 </Text>
-                {/* FIXED: Use description instead of message */}
                 <Text style={[styles.insightMessage, { color: colors.textSecondary }]}>
                   {insight.description}
                 </Text>
@@ -322,8 +367,14 @@ export default function HomeScreen() {
       {/* Community Activity */}
       <View style={[styles.section, { paddingHorizontal: spacing.md, marginBottom: 100 }]}>
         <View style={styles.sectionHeader}>
-          {/* FIXED: Applied typography styles separately */}
-          <Text style={[styles.sectionTitle, { color: colors.text, fontSize: typography.h3.fontSize, fontWeight: typography.h3.fontWeight }]}>
+          <Text style={[
+            styles.sectionTitle, 
+            { 
+              color: colors.text, 
+              fontSize: typography.h3.fontSize, 
+              fontWeight: typography.h3.fontWeight 
+            }
+          ]}>
             Community
           </Text>
           <Pressable onPress={() => router.push('/gallery')}>

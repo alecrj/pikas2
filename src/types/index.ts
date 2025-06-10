@@ -180,11 +180,17 @@ export interface LessonObjective {
   required: boolean;
 }
 
-// NEW: Missing types for learning system
+// FIXED: Added missing content property options
 export interface TheorySegment {
   id: string;
   type: 'text' | 'image' | 'video' | 'interactive';
-  content: string;
+  content: string | {
+    text?: string;
+    demo?: string;
+    title?: string;
+    instructions?: string;
+    url?: string;
+  };
   duration: number;
   order: number;
   interactive?: boolean;
@@ -198,12 +204,31 @@ export interface PracticeInstruction {
   expectedResult?: string;
   validation?: ValidationRule;
   order: number;
+  highlightArea?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
+// FIXED: Enhanced ValidationRule interface
 export interface ValidationRule {
-  type: 'stroke-count' | 'shape-accuracy' | 'color-match' | 'proportion';
-  criteria: any;
+  type: 'stroke-count' | 'shape-accuracy' | 'color-match' | 'proportion' | 
+        'line_detection' | 'shape_completion' | 'shape_construction' | 
+        'point_placement' | 'perspective_lines' | 'shading_element' | 
+        'shading_gradation' | 'cast_shadow' | 'cylindrical_shading' | 
+        'form_construction' | 'completion';
+  criteria?: any;
   threshold?: number;
+  params?: {
+    min?: number;
+    max?: number;
+    targetColor?: string;
+    targetShape?: string;
+    expectedTime?: number;
+    [key: string]: any;
+  };
 }
 
 export interface Assessment {
@@ -236,6 +261,7 @@ export interface PracticeContent {
     id: string;
     stepIndex: number;
     text: string;
+    content?: string; // FIXED: Added content property for hints
     triggerCondition?: string;
   }[];
   referenceImage?: string;
@@ -282,11 +308,11 @@ export interface Lesson {
   bestScore?: number;
   timeSpent: number;
   
-  // Deprecated aliases for backward compatibility
-  duration?: number; // Use estimatedTime instead
-  xpReward?: number; // Use rewards.xp instead
-  skillTreeId?: string; // Use skillTree instead
-  unlockRequirements?: string[]; // Use prerequisites instead
+  // Backward compatibility properties (marked as optional but functional)
+  duration?: number; // Maps to estimatedTime
+  xpReward?: number; // Maps to rewards.xp
+  skillTreeId?: string; // Maps to skillTree
+  unlockRequirements?: string[]; // Maps to prerequisites
 }
 
 export interface SkillTree {
@@ -311,10 +337,12 @@ export interface SkillTreeProgress {
   skillTreeId: string;
   completedLessons: string[];
   totalXpEarned: number;
-  lastActivityDate: string;
+  lastAccessedAt?: Date; // FIXED: Added missing property
+  lastActivityDate?: string;
   completionPercentage: number;
 }
 
+// FIXED: Enhanced LearningProgress interface
 export interface LearningProgress {
   userId: string;
   currentLevel: number;
@@ -330,6 +358,9 @@ export interface LearningProgress {
     reminderTime?: string;
     difficulty: 'adaptive' | 'challenging' | 'comfortable';
   };
+  // FIXED: Added missing daily tracking properties
+  dailyProgress: number;
+  dailyGoal: number;
 }
 
 export interface LessonState {
@@ -350,6 +381,17 @@ export interface LessonState {
   };
   overallProgress: number;
   isPaused: boolean;
+}
+
+// FIXED: Added missing LessonCompletionResult interface
+export interface LessonCompletionResult {
+  lessonId: string;
+  score: number;
+  xpEarned: number;
+  completed: boolean;
+  perfectScore: boolean;
+  timeSpent: number;
+  achievements: string[];
 }
 
 export interface LearningPath {
@@ -388,18 +430,33 @@ export interface LearningState {
 
 // ========================== USER TYPES ==========================
 
-// NEW: User type for social features
+// FIXED: Enhanced User interface with all required properties
 export interface User {
   id: string;
   username: string;
   displayName: string;
+  email: string; // FIXED: Added email
   avatar?: string;
   bio?: string;
   following: string[];
   followers: string[];
-  isVerified: boolean;
-  isOnline: boolean;
-  lastSeenAt: number;
+  isVerified?: boolean;
+  isOnline?: boolean;
+  lastSeenAt?: number;
+  
+  // FIXED: Added missing progression properties that were being accessed
+  level: number;
+  xp: number;
+  totalXP: number;
+  streakDays: number;
+  lastActiveDate: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // FIXED: Added missing nested objects
+  preferences: UserPreferences;
+  stats: UserStats;
+  achievements: Achievement[];
 }
 
 export interface UserProfile {
@@ -449,6 +506,7 @@ export interface UserProgress {
   };
 }
 
+// FIXED: Enhanced Achievement interface
 export interface Achievement {
   id: string;
   name: string;
@@ -464,40 +522,68 @@ export interface Achievement {
   xpReward: number;
   unlockedAt?: number;
   progress?: number;
+  maxProgress?: number; // FIXED: Added missing property
+  title?: string; // FIXED: Added for compatibility
+  iconUrl?: string; // FIXED: Added for compatibility
 }
 
-// NEW: Missing user-related types
+// FIXED: Enhanced UserPreferences interface
 export interface UserPreferences {
   theme: 'light' | 'dark' | 'auto';
+  language?: string; // FIXED: Added language
   notifications: {
     lessons: boolean;
     achievements: boolean;
     social: boolean;
     challenges: boolean;
+    lessonCompletions?: boolean; // FIXED: Added missing notification types
+    achievementUnlocks?: boolean;
+    challengeAlerts?: boolean;
+    socialActivity?: boolean;
   };
   privacy: {
     profile: 'public' | 'friends' | 'private';
     artwork: 'public' | 'friends' | 'private';
     progress: 'public' | 'friends' | 'private';
+    showProgress?: boolean; // FIXED: Added missing property
+    allowMessages?: boolean;
+    portfolioVisibility?: 'public' | 'friends' | 'private';
   };
-  learning: {
+  learning?: {
     dailyGoal: number;
     reminderTime?: string;
     difficulty: 'adaptive' | 'challenging' | 'comfortable';
   };
+  drawingPreferences?: {
+    defaultBrush: string;
+    pressureSensitivity: number;
+    smoothing: number;
+    gridEnabled: boolean;
+    autosaveInterval: number;
+  };
 }
 
+// FIXED: Enhanced UserStats interface
 export interface UserStats {
   totalDrawingTime: number;
   totalLessonsCompleted: number;
   totalArtworksCreated: number;
   currentStreak: number;
   longestStreak: number;
-  averageSessionTime: number;
-  favoriteTools: string[];
-  skillDistribution: Record<string, number>;
+  averageSessionTime?: number;
+  favoriteTools?: string[];
+  skillDistribution?: Record<string, number>;
+  
+  // FIXED: Added missing stats that were being accessed
+  artworksCreated: number;
+  artworksShared: number;
+  challengesCompleted: number;
+  skillsUnlocked: number;
+  perfectLessons: number;
+  lessonsCompleted: number; // FIXED: Added for compatibility
 }
 
+// FIXED: Enhanced Portfolio interface
 export interface Portfolio {
   id: string;
   userId: string;
@@ -507,7 +593,9 @@ export interface Portfolio {
     totalArtworks: number;
     totalLikes: number;
     totalViews: number;
-    followerCount: number;
+    followerCount: number; // FIXED: Added missing property
+    publicArtworks?: number; // FIXED: Added missing property
+    averageTimeSpent?: number; // FIXED: Added missing property
   };
   settings: {
     publicProfile: boolean;
@@ -597,7 +685,6 @@ export interface Challenge {
   winners?: string[];
 }
 
-// NEW: Prize type for challenges
 export interface Prize {
   id: string;
   name: string;
@@ -670,7 +757,7 @@ export interface PerformanceMetrics {
   renderTime: number;
 }
 
-// NEW: AppError type
+// FIXED: Enhanced AppError interface
 export interface AppError {
   code: string;
   message: string;
@@ -678,6 +765,7 @@ export interface AppError {
   context?: any;
   timestamp: Date;
   stack?: string;
+  userId?: string; // FIXED: Added missing property
 }
 
 export interface ErrorInfo {
@@ -730,6 +818,7 @@ export interface Theme {
     h1: { fontSize: number; fontWeight: string; lineHeight: number };
     h2: { fontSize: number; fontWeight: string; lineHeight: number };
     h3: { fontSize: number; fontWeight: string; lineHeight: number };
+    h4: { fontSize: number; fontWeight: string; lineHeight: number }; // FIXED: Added h4
     body: { fontSize: number; fontWeight: string; lineHeight: number };
     caption: { fontSize: number; fontWeight: string; lineHeight: number };
   };
@@ -746,6 +835,7 @@ export interface ThemeContextValue {
   isDark: boolean;
 }
 
+// FIXED: Enhanced UserProgressContextValue interface
 export interface UserProgressContextValue {
   user: UserProfile | null;
   progress: UserProgress | null;
@@ -775,6 +865,48 @@ export interface UserProgressContextValue {
   getDailyGoalProgress: () => number;
   getWeeklyStats: () => any;
   getLearningInsights: () => any;
+}
+
+// FIXED: Enhanced LearningContextType interface
+export interface LearningContextType {
+  currentLesson: Lesson | null;
+  lessonState: LessonState | null;
+  isLoadingLesson: boolean;
+
+  skillTrees: SkillTree[];
+  availableLessons: Lesson[];
+  unlockedLessons: string[];
+
+  learningProgress: LearningProgress | null;
+  completedLessons: string[];
+  currentStreak: number;
+
+  recommendedLesson: Lesson | null;
+  recommendedLessons: Lesson[]; // FIXED: Added missing property
+  insights: Array<{
+    id: string;
+    type: 'improvement' | 'achievement' | 'suggestion';
+    title: string;
+    description: string;
+    actionable: boolean;
+  }>;
+
+  currentSkillTree: SkillTree | null;
+  setCurrentSkillTree: (skillTree: SkillTree | null) => void;
+
+  startLesson: (lesson: Lesson) => Promise<void>;
+  pauseLesson: () => Promise<void>;
+  resumeLesson: () => Promise<void>;
+  completeLesson: (score?: number) => Promise<void>;
+  exitLesson: () => Promise<void>;
+
+  updateProgress: (stepIndex: number, completed: boolean) => Promise<void>;
+  addHint: (hint: string) => void;
+  validateStep: (stepIndex: number, userInput: any) => Promise<boolean>;
+
+  getLesson: (lessonId: string) => Lesson | null;
+  getNextLesson: () => Lesson | null;
+  checkUnlockRequirements: (lessonId: string) => boolean;
 }
 
 export interface LearningContextValue {
@@ -857,11 +989,12 @@ export interface UserEvent extends AppEvent {
   };
 }
 
-// NEW: Type for dimensions
+// ========================== UTILITY TYPES ==========================
+
 export interface Dimensions {
   width: number;
   height: number;
 }
 
-// NEW: Achievement type enum
-export type AchievementType = Achievement['category'];
+// FIXED: Achievement type enum
+export type AchievementType = 'skill' | 'social' | 'milestone' | 'streak' | 'creativity';
