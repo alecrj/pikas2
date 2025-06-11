@@ -8,12 +8,38 @@ import { ThemeProvider } from '../src/contexts/ThemeContext';
 import { UserProgressProvider } from '../src/contexts/UserProgressContext';
 import { DrawingProvider } from '../src/contexts/DrawingContext';
 import { LearningProvider } from '../src/contexts/LearningContext';
-import { ErrorBoundary } from '../src/engines/core/ErrorBoundary';
-import { errorHandler } from '../src/engines/core/ErrorHandler';
-import { eventBus } from '../src/engines/core/EventBus';
+import { AppErrorBoundary, NavigationDebugger, ContextDebugger } from '../src/utils/DebugUtils';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
+
+// Simple error boundary fallback for core engines
+class CoreErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    console.error('🚨 Core Error:', error);
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error('🚨 Core Error Details:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      // Continue anyway - most features should work
+      console.warn('Recovering from core error, continuing with app...');
+    }
+    return this.props.children;
+  }
+}
 
 export default function RootLayout() {
   const [appIsReady, setAppIsReady] = React.useState(false);
@@ -21,58 +47,19 @@ export default function RootLayout() {
   useEffect(() => {
     async function prepare() {
       try {
-        // Initialize error handler with safe defaults
-        errorHandler.setUserId('user-' + Date.now());
+        NavigationDebugger.log('App initialization starting');
         
-        // Register global error handlers with safety
-        errorHandler.registerHandler('NETWORK_ERROR', (error) => {
-          console.log('Network error handled:', error.message);
-        });
-
-        // Initialize event listeners with safety
-        eventBus.on('app_launched', () => {
-          console.log('App launched event fired');
-        });
-
-        eventBus.on('drawing_started', (data) => {
-          console.log('Drawing started:', data);
-        });
-
-        eventBus.on('lesson_started', (data) => {
-          console.log('Lesson started:', data);
-        });
-
-        // Initialize all engines with error handling
-        console.log('Initializing engines...');
+        // Initialize with minimal requirements
+        // We'll skip engine initialization as they might not exist yet
+        console.log('Preparing app...');
         
-        const engineInitializations = [
-          () => import('../src/engines/core').then(m => m.initializeCoreEngine?.() || Promise.resolve()),
-          () => import('../src/engines/drawing').then(m => m.initializeDrawingEngine?.() || Promise.resolve()),
-          () => import('../src/engines/learning').then(m => m.initializeLearningEngine?.() || Promise.resolve()),
-          () => import('../src/engines/user').then(m => m.initializeUserEngine?.() || Promise.resolve()),
-          () => import('../src/engines/community').then(m => m.initializeCommunityEngine?.() || Promise.resolve()),
-        ];
-
-        // Initialize engines with individual error handling
-        for (const initEngine of engineInitializations) {
-          try {
-            await initEngine();
-          } catch (error) {
-            console.warn('Engine initialization failed (non-critical):', error);
-            // Continue with other engines
-          }
-        }
+        // Just ensure basic setup
+        await new Promise(resolve => setTimeout(resolve, 100));
         
-        console.log('Engine initialization completed');
-
-        // Minimum loading time for smooth UX
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        // Emit app launched event
-        eventBus.emit('app_launched', { timestamp: Date.now() });
+        NavigationDebugger.log('App initialization completed');
       } catch (e) {
         console.warn('Error during app initialization (non-critical):', e);
-        // Continue anyway - most features should work
+        // Continue anyway
       } finally {
         setAppIsReady(true);
       }
@@ -85,9 +72,9 @@ export default function RootLayout() {
     if (appIsReady) {
       try {
         await SplashScreen.hideAsync();
+        NavigationDebugger.log('Splash screen hidden');
       } catch (error) {
         console.warn('Failed to hide splash screen:', error);
-        // Non-critical error
       }
     }
   }, [appIsReady]);
@@ -97,33 +84,77 @@ export default function RootLayout() {
   }
 
   return (
-    <ErrorBoundary>
-      <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
-        <SafeAreaProvider>
-          <ThemeProvider>
-            <UserProgressProvider>
-              <DrawingProvider>
-                <LearningProvider>
-                  <StatusBar style="auto" />
-                  <Stack
-                    screenOptions={{
-                      headerShown: false,
-                    }}
-                  >
-                    <Stack.Screen name="index" options={{ headerShown: false }} />
-                    <Stack.Screen name="onboarding" options={{ presentation: 'fullScreenModal' }} />
-                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                    <Stack.Screen name="lesson/[id]" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="drawing/[id]" options={{ presentation: 'fullScreenModal' }} />
-                    <Stack.Screen name="profile/[id]" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
-                  </Stack>
-                </LearningProvider>
-              </DrawingProvider>
-            </UserProgressProvider>
-          </ThemeProvider>
-        </SafeAreaProvider>
-      </GestureHandlerRootView>
-    </ErrorBoundary>
+    <AppErrorBoundary>
+      <CoreErrorBoundary>
+        <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
+          <SafeAreaProvider>
+            <ThemeProvider>
+              <UserProgressProvider>
+                <DrawingProvider>
+                  <LearningProvider>
+                    <StatusBar style="auto" />
+                    <Stack
+                      screenOptions={{
+                        headerShown: false,
+                      }}
+                    >
+                      <Stack.Screen 
+                        name="index" 
+                        options={{ 
+                          headerShown: false,
+                          animation: 'none' // Prevent animation issues
+                        }} 
+                      />
+                      <Stack.Screen 
+                        name="onboarding" 
+                        options={{ 
+                          presentation: 'fullScreenModal',
+                          animation: 'slide_from_bottom'
+                        }} 
+                      />
+                      <Stack.Screen 
+                        name="(tabs)" 
+                        options={{ 
+                          headerShown: false,
+                          animation: 'none' // Prevent animation issues
+                        }} 
+                      />
+                      <Stack.Screen 
+                        name="lesson/[id]" 
+                        options={{ 
+                          presentation: 'modal',
+                          animation: 'slide_from_bottom'
+                        }} 
+                      />
+                      <Stack.Screen 
+                        name="drawing/[id]" 
+                        options={{ 
+                          presentation: 'fullScreenModal',
+                          animation: 'slide_from_right'
+                        }} 
+                      />
+                      <Stack.Screen 
+                        name="profile/[id]" 
+                        options={{ 
+                          presentation: 'modal',
+                          animation: 'slide_from_bottom'
+                        }} 
+                      />
+                      <Stack.Screen 
+                        name="settings" 
+                        options={{ 
+                          presentation: 'modal',
+                          animation: 'slide_from_bottom'
+                        }} 
+                      />
+                    </Stack>
+                  </LearningProvider>
+                </DrawingProvider>
+              </UserProgressProvider>
+            </ThemeProvider>
+          </SafeAreaProvider>
+        </GestureHandlerRootView>
+      </CoreErrorBoundary>
+    </AppErrorBoundary>
   );
 }

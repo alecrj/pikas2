@@ -7,6 +7,7 @@ import {
   Dimensions,
   ScrollView,
   TextInput,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -21,6 +22,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { useTheme } from '../src/contexts/ThemeContext';
 import { useUserProgress } from '../src/contexts/UserProgressContext';
+import { NavigationDebugger, ContextDebugger, useDebugMount } from '../src/utils/DebugUtils';
 import {
   Palette,
   BookOpen,
@@ -111,16 +113,27 @@ const goals = [
 export default function OnboardingScreen() {
   const router = useRouter();
   const theme = useTheme();
-  const { createUser, isLoading } = useUserProgress();
+  const { createUser, user } = useUserProgress();
   const [currentStep, setCurrentStep] = useState(0);
   const [selectedSkillLevel, setSelectedSkillLevel] = useState('beginner');
   const [selectedGoals, setSelectedGoals] = useState<string[]>(['hobby']);
   const [userName, setUserName] = useState('');
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+
+  useDebugMount('OnboardingScreen');
 
   const progressValue = useSharedValue(0);
   const totalSteps = onboardingSteps.length + 2; // Welcome steps + skill level + goals
 
   const styles = createStyles(theme);
+
+  // Monitor user changes
+  React.useEffect(() => {
+    if (user?.id && !isCreatingUser) {
+      NavigationDebugger.log('User detected in onboarding, navigating to tabs', { userId: user.id });
+      router.replace('/(tabs)');
+    }
+  }, [user, isCreatingUser, router]);
 
   const handleNext = () => {
     if (currentStep < totalSteps - 1) {
@@ -147,30 +160,58 @@ export default function OnboardingScreen() {
   };
 
   const completeOnboarding = async () => {
+    if (isCreatingUser) {
+      NavigationDebugger.log('User creation already in progress');
+      return;
+    }
+
     try {
-      // Create user profile with onboarding data - using only known properties
-      await createUser({
+      setIsCreatingUser(true);
+      NavigationDebugger.log('Starting user creation', {
         displayName: userName || 'New Artist',
-        email: `${(userName || 'newartist').toLowerCase()}@pikaso.app`,
-        // Store onboarding data in a way that's compatible with existing types
-        // Note: We'll store skill level and goals in user profile after creation
-      });
-      
-      // TODO: Store additional onboarding data (skillLevel, goals) after user creation
-      // This might need to be stored separately or in user preferences
-      console.log('Onboarding data:', {
         skillLevel: selectedSkillLevel,
         goals: selectedGoals,
       });
+
+      // Create user profile with onboarding data
+      await createUser({
+        displayName: userName || 'New Artist',
+        email: `${(userName || 'newartist').toLowerCase().replace(/\s+/g, '')}@pikaso.app`,
+        skillLevel: selectedSkillLevel,
+        learningGoals: selectedGoals,
+      });
+      
+      ContextDebugger.log('UserProgress', 'User created successfully');
+      
+      // Store additional onboarding preferences
+      // This will be handled by the context internally
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Navigate to main app
-      router.replace('/(tabs)');
+      // Give context time to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      NavigationDebugger.log('User creation complete, navigating to tabs');
+      
+      // The useEffect above will handle navigation when user is detected
+      // But we can also navigate as a fallback
+      if (!user?.id) {
+        router.replace('/(tabs)');
+      }
     } catch (error) {
       console.error('Failed to complete onboarding:', error);
-      // Graceful fallback - navigate anyway
-      router.replace('/(tabs)');
+      NavigationDebugger.error('Onboarding failed', error);
+      
+      Alert.alert(
+        'Setup Failed',
+        'There was an error creating your account. Please try again.',
+        [
+          {
+            text: 'Try Again',
+            onPress: () => setIsCreatingUser(false),
+          },
+        ]
+      );
     }
   };
 
@@ -317,6 +358,8 @@ export default function OnboardingScreen() {
             placeholderTextColor={theme.colors.textSecondary}
             value={userName}
             onChangeText={setUserName}
+            autoCapitalize="words"
+            autoCorrect={false}
           />
         </View>
         
@@ -393,19 +436,19 @@ export default function OnboardingScreen() {
             styles.nextButton, 
             { 
               backgroundColor: canProceed ? theme.colors.primary : theme.colors.border,
-              opacity: canProceed ? 1 : 0.6,
+              opacity: canProceed && !isCreatingUser ? 1 : 0.6,
             }
           ]}
           onPress={handleNext}
-          disabled={!canProceed || isLoading}
+          disabled={!canProceed || isCreatingUser}
         >
           <Text style={[
             styles.nextButtonText,
             { color: canProceed ? '#FFFFFF' : theme.colors.textSecondary }
           ]}>
-            {isLoading ? 'Setting up...' : isLastStep ? 'Get Started' : 'Continue'}
+            {isCreatingUser ? 'Setting up your workspace...' : isLastStep ? 'Get Started' : 'Continue'}
           </Text>
-          {!isLoading && <ArrowRight size={20} color={canProceed ? "#FFFFFF" : theme.colors.textSecondary} />}
+          {!isCreatingUser && <ArrowRight size={20} color={canProceed ? "#FFFFFF" : theme.colors.textSecondary} />}
         </Pressable>
       </View>
     </View>
