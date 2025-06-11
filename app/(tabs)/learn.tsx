@@ -44,7 +44,7 @@ export default function LearnScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { user, progress, addXP } = useUserProgress();
-  const { currentSkillTree, setCurrentSkillTree } = useLearning();
+  const { currentSkillTree, setCurrentSkillTree, startLesson } = useLearning();
   
   const [skillTrees, setSkillTrees] = useState<SkillTree[]>([]);
   const [progressMap, setProgressMap] = useState<Map<string, SkillTreeProgress>>(new Map());
@@ -59,13 +59,12 @@ export default function LearnScreen() {
     
     // Subscribe to progress updates
     const unsubscribe = skillTreeManager.subscribeToProgress((learningProgress) => {
-        // Convert the skill trees array to a Map
-        const map = new Map<string, SkillTreeProgress>();
-        learningProgress.skillTrees.forEach(tree => {
-          map.set(tree.skillTreeId, tree);
-        });
-        setProgressMap(map);
+      const map = new Map<string, SkillTreeProgress>();
+      learningProgress.skillTrees.forEach(tree => {
+        map.set(tree.skillTreeId, tree);
       });
+      setProgressMap(map);
+    });
     
     return unsubscribe;
   }, []);
@@ -90,12 +89,24 @@ export default function LearnScreen() {
     setRecommendedLesson(lesson);
   };
 
-  const startLesson = (lesson: Lesson) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push({
-      pathname: '/(tabs)/lesson',
-      params: { lessonId: lesson.id },
-    });
+  const handleStartLesson = async (lesson: Lesson) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      console.log('🎯 Starting lesson:', lesson.id);
+      
+      // Start the lesson in the context
+      await startLesson(lesson);
+      
+      // Navigate to the lesson screen
+      router.push(`/lesson/${lesson.id}`);
+    } catch (error) {
+      console.error('Failed to start lesson:', error);
+      Alert.alert(
+        'Error',
+        'Failed to start the lesson. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const renderRecommendedSection = () => {
@@ -115,8 +126,11 @@ export default function LearnScreen() {
             <Text style={styles.recommendedTitle}>Continue Learning</Text>
           </View>
           <Pressable
-            style={styles.recommendedLesson}
-            onPress={() => startLesson(recommendedLesson)}
+            style={({ pressed }) => [
+              styles.recommendedLesson,
+              { opacity: pressed ? 0.8 : 1 },
+            ]}
+            onPress={() => handleStartLesson(recommendedLesson)}
           >
             <View style={styles.lessonIcon}>
               <BookOpen size={32} color={theme.colors.primary} />
@@ -127,11 +141,15 @@ export default function LearnScreen() {
               <View style={styles.lessonMeta}>
                 <View style={styles.metaItem}>
                   <Clock size={14} color={theme.colors.textSecondary} />
-                  <Text style={styles.metaText}>{recommendedLesson.duration || recommendedLesson.estimatedTime} min</Text>
+                  <Text style={styles.metaText}>
+                    {recommendedLesson.duration || recommendedLesson.estimatedTime} min
+                  </Text>
                 </View>
                 <View style={styles.metaItem}>
                   <Trophy size={14} color={theme.colors.textSecondary} />
-                  <Text style={styles.metaText}>{recommendedLesson.xpReward || recommendedLesson.rewards?.xp} XP</Text>
+                  <Text style={styles.metaText}>
+                    {recommendedLesson.xpReward || recommendedLesson.rewards?.xp} XP
+                  </Text>
                 </View>
               </View>
             </View>
@@ -155,7 +173,10 @@ export default function LearnScreen() {
         style={styles.skillTreeCard}
       >
         <Pressable
-          style={styles.skillTreeHeader}
+          style={({ pressed }) => [
+            styles.skillTreeHeader,
+            { opacity: pressed ? 0.8 : 1 },
+          ]}
           onPress={() => {
             setCurrentSkillTree(tree);
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -210,18 +231,19 @@ export default function LearnScreen() {
         style={[styles.lessonCard, animatedStyle]}
       >
         <Pressable
-          style={[
+          style={({ pressed }) => [
             styles.lessonPressable,
             isCompleted && styles.lessonCompleted,
             !isUnlocked && styles.lessonLocked,
             isNext && styles.lessonNext,
+            { opacity: pressed ? 0.8 : 1 },
           ]}
           onPress={() => {
             if (isUnlocked) {
               scale.value = withSpring(0.95, {}, () => {
                 scale.value = withSpring(1);
               });
-              startLesson(lesson);
+              handleStartLesson(lesson);
             } else {
               Alert.alert(
                 'Lesson Locked',
@@ -262,7 +284,9 @@ export default function LearnScreen() {
               <View style={styles.lessonMetaRow}>
                 <View style={styles.metaItem}>
                   <Clock size={12} color={theme.colors.textSecondary} />
-                  <Text style={styles.metaTextSmall}>{lesson.duration || lesson.estimatedTime} min</Text>
+                  <Text style={styles.metaTextSmall}>
+                    {lesson.duration || lesson.estimatedTime} min
+                  </Text>
                 </View>
                 <View style={styles.metaItem}>
                   <Star size={12} color={theme.colors.textSecondary} />
@@ -272,7 +296,9 @@ export default function LearnScreen() {
                 </View>
                 <View style={styles.metaItem}>
                   <Trophy size={12} color={theme.colors.textSecondary} />
-                  <Text style={styles.metaTextSmall}>{lesson.xpReward || lesson.rewards?.xp} XP</Text>
+                  <Text style={styles.metaTextSmall}>
+                    {lesson.xpReward || lesson.rewards?.xp} XP
+                  </Text>
                 </View>
               </View>
             </View>

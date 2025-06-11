@@ -20,6 +20,7 @@ import {
 export default function TabLayout() {
   const { colors, theme } = useTheme();
   const { progress, getDailyGoalProgress } = useUserProgress();
+  const router = useRouter();
   
   // Safe data access with fallbacks
   const streakDays = progress?.streakDays || 0;
@@ -27,30 +28,29 @@ export default function TabLayout() {
   
   const handleTabPress = () => {
     try {
-      // Haptic feedback on tab press
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
-      // Graceful fallback if haptics fail
       console.warn('Haptics not available:', error);
     }
   };
 
-  const safeColors = {
-    primary: colors?.primary || '#6366F1',
-    textSecondary: colors?.textSecondary || '#6B7280',
-    surface: colors?.surface || '#FFFFFF',
-    border: colors?.border || '#E5E7EB',
-    text: colors?.text || '#111827',
+  const handleSettingsPress = () => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      router.push('/settings');
+    } catch (error) {
+      console.warn('Navigation error:', error);
+    }
   };
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: safeColors.primary,
-        tabBarInactiveTintColor: safeColors.textSecondary,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: Platform.OS === 'ios' ? 'transparent' : safeColors.surface,
-          borderTopColor: safeColors.border,
+          backgroundColor: Platform.OS === 'ios' ? 'transparent' : colors.surface,
+          borderTopColor: colors.border,
           borderTopWidth: 0.5,
           height: Platform.OS === 'ios' ? 88 : 68,
           paddingBottom: Platform.OS === 'ios' ? 28 : 8,
@@ -73,11 +73,11 @@ export default function TabLayout() {
             />
           ) : null,
         headerStyle: {
-          backgroundColor: safeColors.surface,
+          backgroundColor: colors.surface,
           elevation: 0,
           shadowOpacity: 0,
         },
-        headerTintColor: safeColors.text,
+        headerTintColor: colors.text,
         headerTitleStyle: {
           fontWeight: '600',
           fontSize: 18,
@@ -94,11 +94,14 @@ export default function TabLayout() {
           ),
           headerTitle: streakDays > 0 ? `Day ${streakDays} 🔥` : 'Welcome',
           headerRight: () => (
-            <ProgressIndicator progress={dailyGoalProgress} colors={safeColors} />
+            <ProgressIndicator progress={dailyGoalProgress} colors={colors} />
           ),
         }}
         listeners={{
-          tabPress: handleTabPress,
+          tabPress: (e) => {
+            handleTabPress();
+            console.log('Home tab pressed');
+          },
         }}
       />
       <Tabs.Screen
@@ -112,7 +115,10 @@ export default function TabLayout() {
           headerShown: false,
         }}
         listeners={{
-          tabPress: handleTabPress,
+          tabPress: (e) => {
+            handleTabPress();
+            console.log('Draw tab pressed');
+          },
         }}
       />
       <Tabs.Screen
@@ -126,7 +132,10 @@ export default function TabLayout() {
           headerTitle: 'Skill Trees',
         }}
         listeners={{
-          tabPress: handleTabPress,
+          tabPress: (e) => {
+            handleTabPress();
+            console.log('Learn tab pressed');
+          },
         }}
       />
       <Tabs.Screen
@@ -140,7 +149,10 @@ export default function TabLayout() {
           headerTitle: 'Community',
         }}
         listeners={{
-          tabPress: handleTabPress,
+          tabPress: (e) => {
+            handleTabPress();
+            console.log('Gallery tab pressed');
+          },
         }}
       />
       <Tabs.Screen
@@ -153,18 +165,26 @@ export default function TabLayout() {
           ),
           headerTitle: 'Profile',
           headerRight: () => (
-            <SettingsButton colors={safeColors} />
+            <Pressable
+              onPress={handleSettingsPress}
+              style={{ marginRight: 16 }}
+            >
+              <Settings size={24} color={colors.text} strokeWidth={2} />
+            </Pressable>
           ),
         }}
         listeners={{
-          tabPress: handleTabPress,
+          tabPress: (e) => {
+            handleTabPress();
+            console.log('Profile tab pressed');
+          },
         }}
       />
     </Tabs>
   );
 }
 
-// Progress indicator component with error handling
+// Progress indicator component
 function ProgressIndicator({ progress, colors }: { progress: number; colors: any }) {
   const safeProgress = Math.max(0, Math.min(100, progress || 0));
   
@@ -186,30 +206,5 @@ function ProgressIndicator({ progress, colors }: { progress: number; colors: any
         }}
       />
     </View>
-  );
-}
-
-// Settings button component with error handling
-function SettingsButton({ colors }: { colors: any }) {
-  const router = useRouter();
-  
-  const handlePress = () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      router.push('/settings');
-    } catch (error) {
-      console.warn('Navigation or haptics failed:', error);
-      // Fallback navigation without haptics
-      router.push('/settings');
-    }
-  };
-  
-  return (
-    <Pressable
-      onPress={handlePress}
-      style={{ marginRight: 16 }}
-    >
-      <Settings size={24} color={colors.text} strokeWidth={2} />
-    </Pressable>
   );
 }

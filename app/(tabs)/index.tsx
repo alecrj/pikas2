@@ -32,8 +32,6 @@ const { width: screenWidth } = Dimensions.get('window');
 export default function HomeScreen() {
   const router = useRouter();
   const { colors, spacing, borderRadius } = useTheme();
-  
-  // Single context usage with proper destructuring
   const { 
     user, 
     isLoading, 
@@ -41,7 +39,6 @@ export default function HomeScreen() {
     checkDailyStreak,
     progress 
   } = useUserProgress();
-  
   const { recommendedLesson, learningProgress, insights } = useLearning();
   const [dailyChallenge, setDailyChallenge] = React.useState<any>(null);
 
@@ -54,33 +51,17 @@ export default function HomeScreen() {
   const xpProgress = xpToNextLevel > 0 ? xp / (xp + xpToNextLevel) : 0;
 
   useEffect(() => {
-    // Check daily streak on mount
     if (checkDailyStreak) {
       checkDailyStreak();
     }
     
-    // Safe challenge loading with mock data
-    const loadDailyChallenge = async () => {
-      try {
-        const mockChallenge = {
-          theme: "Draw your morning coffee",
-          participants: 847,
-          type: 'daily',
-          reward: 50,
-          timeLeft: '18h 32m'
-        };
-        setDailyChallenge(mockChallenge);
-      } catch (error) {
-        console.warn('Challenge system not ready, using mock data');
-        setDailyChallenge({
-          theme: "Draw your morning coffee", 
-          participants: 847,
-          type: 'daily'
-        });
-      }
-    };
-
-    loadDailyChallenge();
+    setDailyChallenge({
+      theme: "Draw your morning coffee",
+      participants: 847,
+      type: 'daily',
+      reward: 50,
+      timeLeft: '18h 32m'
+    });
   }, []);
 
   if (isLoading) {
@@ -94,31 +75,40 @@ export default function HomeScreen() {
     );
   }
 
-  if (!user) {
-    // Redirect to onboarding if no user
-    router.replace('/onboarding');
-    return null;
-  }
-
   const handleStartLesson = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    console.log('Starting lesson navigation');
+    
     if (recommendedLesson) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      // Navigate to specific lesson
       router.push(`/lesson/${recommendedLesson.id}`);
     } else {
-      // Navigate to learn tab if no specific lesson
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      router.push('/learn');
+      // Navigate to learn tab
+      router.push('/(tabs)/learn');
     }
   };
 
   const handleStartDrawing = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push('/draw');
+    console.log('Starting drawing navigation');
+    
+    // Navigate to draw tab
+    router.push('/(tabs)/draw');
   };
 
   const handleViewChallenge = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/gallery');
+    console.log('Viewing challenge');
+    
+    // Navigate to gallery tab
+    router.push('/(tabs)/gallery');
+  };
+
+  const handleViewGallery = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    console.log('Navigating to gallery');
+    
+    router.push('/(tabs)/gallery');
   };
 
   // Safe daily goal calculation
@@ -145,7 +135,7 @@ export default function HomeScreen() {
             fontWeight: typography.h2.fontWeight 
           }
         ]}>
-          {user.displayName || 'Artist'}
+          {user?.displayName || 'Artist'}
         </Text>
       </View>
 
@@ -230,11 +220,12 @@ export default function HomeScreen() {
           {/* Continue Learning */}
           <Pressable
             onPress={handleStartLesson}
-            style={[
+            style={({ pressed }) => [
               styles.actionCard,
               { 
                 backgroundColor: colors.surface,
                 borderRadius: borderRadius.lg,
+                opacity: pressed ? 0.8 : 1,
               }
             ]}
           >
@@ -261,11 +252,12 @@ export default function HomeScreen() {
           {/* Free Draw */}
           <Pressable
             onPress={handleStartDrawing}
-            style={[
+            style={({ pressed }) => [
               styles.actionCard,
               { 
                 backgroundColor: colors.surface,
                 borderRadius: borderRadius.lg,
+                opacity: pressed ? 0.8 : 1,
               }
             ]}
           >
@@ -307,11 +299,12 @@ export default function HomeScreen() {
           
           <Pressable
             onPress={handleViewChallenge}
-            style={[
+            style={({ pressed }) => [
               styles.challengeCard,
               { 
                 backgroundColor: colors.surface,
                 borderRadius: borderRadius.lg,
+                opacity: pressed ? 0.8 : 1,
               }
             ]}
           >
@@ -351,57 +344,6 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Learning Insights */}
-      {insights && insights.length > 0 && (
-        <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
-          <Text style={[
-            styles.sectionTitle, 
-            { 
-              color: colors.text, 
-              fontSize: typography.h3.fontSize, 
-              fontWeight: typography.h3.fontWeight 
-            }
-          ]}>
-            Your Progress Insights
-          </Text>
-          
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingRight: spacing.md }}
-          >
-            {insights.slice(0, 3).map((insight, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.insightCard,
-                  { 
-                    backgroundColor: colors.surface,
-                    borderRadius: borderRadius.md,
-                    marginRight: spacing.sm,
-                  }
-                ]}
-              >
-                <TrendingUp 
-                  size={20} 
-                  color={
-                    insight.type === 'achievement' ? colors.success :
-                    insight.type === 'improvement' ? colors.warning :
-                    colors.info
-                  } 
-                />
-                <Text style={[styles.insightTitle, { color: colors.text }]}>
-                  {insight.title}
-                </Text>
-                <Text style={[styles.insightMessage, { color: colors.textSecondary }]}>
-                  {insight.description}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
-        </View>
-      )}
-
       {/* Community Activity */}
       <View style={[styles.section, { paddingHorizontal: spacing.md, marginBottom: 100 }]}>
         <View style={styles.sectionHeader}>
@@ -415,7 +357,7 @@ export default function HomeScreen() {
           ]}>
             Community Highlights
           </Text>
-          <Pressable onPress={() => router.push('/gallery')}>
+          <Pressable onPress={handleViewGallery}>
             <Text style={[styles.seeAllText, { color: colors.primary }]}>
               See All
             </Text>
@@ -423,12 +365,13 @@ export default function HomeScreen() {
         </View>
         
         <Pressable
-          onPress={() => router.push('/gallery')}
-          style={[
+          onPress={handleViewGallery}
+          style={({ pressed }) => [
             styles.communityCard,
             { 
               backgroundColor: colors.surface,
               borderRadius: borderRadius.lg,
+              opacity: pressed ? 0.8 : 1,
             }
           ]}
         >
@@ -610,20 +553,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 12,
     fontWeight: '600',
-  },
-  insightCard: {
-    padding: 16,
-    width: screenWidth * 0.7,
-  },
-  insightTitle: {
-    fontWeight: '600',
-    marginTop: 8,
-    fontSize: 16,
-  },
-  insightMessage: {
-    fontSize: 14,
-    marginTop: 4,
-    lineHeight: 20,
   },
   communityCard: {
     flexDirection: 'row',
