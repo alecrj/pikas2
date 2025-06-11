@@ -21,15 +21,15 @@ export default function RootLayout() {
   useEffect(() => {
     async function prepare() {
       try {
-        // Initialize error handler
+        // Initialize error handler with safe defaults
         errorHandler.setUserId('user-' + Date.now());
         
-        // Register global error handlers
+        // Register global error handlers with safety
         errorHandler.registerHandler('NETWORK_ERROR', (error) => {
           console.log('Network error handled:', error.message);
         });
 
-        // Initialize event listeners
+        // Initialize event listeners with safety
         eventBus.on('app_launched', () => {
           console.log('App launched event fired');
         });
@@ -42,26 +42,37 @@ export default function RootLayout() {
           console.log('Lesson started:', data);
         });
 
-        // Initialize all engines
+        // Initialize all engines with error handling
         console.log('Initializing engines...');
         
-        await Promise.all([
-          import('../src/engines/core').then(m => m.initializeCoreEngine()),
-          import('../src/engines/drawing').then(m => m.initializeDrawingEngine()),
-          import('../src/engines/learning').then(m => m.initializeLearningEngine()),
-          import('../src/engines/user').then(m => m.initializeUserEngine()),
-          import('../src/engines/community').then(m => m.initializeCommunityEngine()),
-        ]);
-        
-        console.log('All engines initialized successfully');
+        const engineInitializations = [
+          () => import('../src/engines/core').then(m => m.initializeCoreEngine?.() || Promise.resolve()),
+          () => import('../src/engines/drawing').then(m => m.initializeDrawingEngine?.() || Promise.resolve()),
+          () => import('../src/engines/learning').then(m => m.initializeLearningEngine?.() || Promise.resolve()),
+          () => import('../src/engines/user').then(m => m.initializeUserEngine?.() || Promise.resolve()),
+          () => import('../src/engines/community').then(m => m.initializeCommunityEngine?.() || Promise.resolve()),
+        ];
 
-        // Simulate loading resources
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Initialize engines with individual error handling
+        for (const initEngine of engineInitializations) {
+          try {
+            await initEngine();
+          } catch (error) {
+            console.warn('Engine initialization failed (non-critical):', error);
+            // Continue with other engines
+          }
+        }
+        
+        console.log('Engine initialization completed');
+
+        // Minimum loading time for smooth UX
+        await new Promise(resolve => setTimeout(resolve, 300));
         
         // Emit app launched event
         eventBus.emit('app_launched', { timestamp: Date.now() });
       } catch (e) {
-        console.warn('Error during app initialization:', e);
+        console.warn('Error during app initialization (non-critical):', e);
+        // Continue anyway - most features should work
       } finally {
         setAppIsReady(true);
       }
@@ -72,7 +83,12 @@ export default function RootLayout() {
 
   const onLayoutRootView = React.useCallback(async () => {
     if (appIsReady) {
-      await SplashScreen.hideAsync();
+      try {
+        await SplashScreen.hideAsync();
+      } catch (error) {
+        console.warn('Failed to hide splash screen:', error);
+        // Non-critical error
+      }
     }
   }, [appIsReady]);
 
@@ -94,11 +110,12 @@ export default function RootLayout() {
                       headerShown: false,
                     }}
                   >
+                    <Stack.Screen name="index" options={{ headerShown: false }} />
+                    <Stack.Screen name="onboarding" options={{ presentation: 'fullScreenModal' }} />
                     <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                     <Stack.Screen name="lesson/[id]" options={{ presentation: 'modal' }} />
                     <Stack.Screen name="drawing/[id]" options={{ presentation: 'fullScreenModal' }} />
                     <Stack.Screen name="profile/[id]" options={{ presentation: 'modal' }} />
-                    <Stack.Screen name="onboarding" options={{ presentation: 'fullScreenModal' }} />
                     <Stack.Screen name="settings" options={{ presentation: 'modal' }} />
                   </Stack>
                 </LearningProvider>

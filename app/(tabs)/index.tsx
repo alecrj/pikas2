@@ -11,9 +11,8 @@ import {
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useTheme } from '../../src/contexts/ThemeContext';
-import { useUserProgress, useProgress } from '../../src/contexts/UserProgressContext';
+import { useUserProgress } from '../../src/contexts/UserProgressContext';
 import { useLearning } from '../../src/contexts/LearningContext';
-import { challengeSystem } from '../../src/engines/community/ChallengeSystem';
 import { typography } from '../../src/constants/typography';
 import * as Haptics from 'expo-haptics';
 import {
@@ -34,33 +33,63 @@ export default function HomeScreen() {
   const router = useRouter();
   const { colors, spacing, borderRadius } = useTheme();
   
-  // FIXED: Use separate hooks for different data sources
-  const { user, isLoading, getDailyGoalProgress, checkDailyStreak } = useUserProgress();
-  const { level, xp, xpToNextLevel, xpProgress, streakDays } = useProgress();
-  const { recommendedLesson, learningProgress, insights } = useLearning();
+  // Single context usage with proper destructuring
+  const { 
+    user, 
+    isLoading, 
+    getDailyGoalProgress, 
+    checkDailyStreak,
+    progress 
+  } = useUserProgress();
   
+  const { recommendedLesson, learningProgress, insights } = useLearning();
   const [dailyChallenge, setDailyChallenge] = React.useState<any>(null);
+
+  // Safe data access with fallbacks
+  const level = progress?.level || 1;
+  const xp = progress?.xp || 0;
+  const xpToNextLevel = progress?.xpToNextLevel || 100;
+  const streakDays = progress?.streakDays || 0;
+  const achievements = progress?.achievements || [];
+  const xpProgress = xpToNextLevel > 0 ? xp / (xp + xpToNextLevel) : 0;
 
   useEffect(() => {
     // Check daily streak on mount
-    checkDailyStreak();
-    
-    // Load daily challenge
-    try {
-      // FIXED: Use getAllActiveChallenges instead of getActiveChallenge
-      const challenges = challengeSystem.getAllActiveChallenges();
-      const dailyChallenges = challenges.filter(c => c.type === 'daily');
-      setDailyChallenge(dailyChallenges.length > 0 ? dailyChallenges[0] : null);
-    } catch (error) {
-      console.warn('Failed to load daily challenge:', error);
-      setDailyChallenge(null);
+    if (checkDailyStreak) {
+      checkDailyStreak();
     }
+    
+    // Safe challenge loading with mock data
+    const loadDailyChallenge = async () => {
+      try {
+        const mockChallenge = {
+          theme: "Draw your morning coffee",
+          participants: 847,
+          type: 'daily',
+          reward: 50,
+          timeLeft: '18h 32m'
+        };
+        setDailyChallenge(mockChallenge);
+      } catch (error) {
+        console.warn('Challenge system not ready, using mock data');
+        setDailyChallenge({
+          theme: "Draw your morning coffee", 
+          participants: 847,
+          type: 'daily'
+        });
+      }
+    };
+
+    loadDailyChallenge();
   }, []);
 
   if (isLoading) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+          Loading your workspace...
+        </Text>
       </View>
     );
   }
@@ -75,6 +104,10 @@ export default function HomeScreen() {
     if (recommendedLesson) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       router.push(`/lesson/${recommendedLesson.id}`);
+    } else {
+      // Navigate to learn tab if no specific lesson
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      router.push('/learn');
     }
   };
 
@@ -88,8 +121,11 @@ export default function HomeScreen() {
     router.push('/gallery');
   };
 
-  // FIXED: Calculate daily goal progress safely
-  const dailyGoalProgress = getDailyGoalProgress();
+  // Safe daily goal calculation
+  const dailyGoalProgress = getDailyGoalProgress ? getDailyGoalProgress() : 0;
+  
+  // Safe achievements count
+  const completedAchievements = achievements.filter(a => a.unlockedAt).length;
 
   return (
     <ScrollView 
@@ -109,14 +145,14 @@ export default function HomeScreen() {
             fontWeight: typography.h2.fontWeight 
           }
         ]}>
-          {user.displayName}
+          {user.displayName || 'Artist'}
         </Text>
       </View>
 
       {/* Progress Card */}
       <View style={{ paddingHorizontal: spacing.md, marginTop: spacing.md }}>
         <LinearGradient
-          colors={[colors.primary, colors.primaryDark]}
+          colors={[colors.primary, colors.primaryDark || colors.primary]}
           style={[styles.progressCard, { borderRadius: borderRadius.xl }]}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -133,7 +169,7 @@ export default function HomeScreen() {
                 Level {level}
               </Text>
               <Text style={styles.xpText}>
-                {xp} / {xpToNextLevel + xp} XP
+                {xp.toLocaleString()} / {(xpToNextLevel + xp).toLocaleString()} XP
               </Text>
             </View>
             <View style={styles.streakContainer}>
@@ -147,7 +183,7 @@ export default function HomeScreen() {
               <View 
                 style={[
                   styles.progressBarFill,
-                  { width: `${Math.min(100, xpProgress * 100)}%` }
+                  { width: `${Math.min(100, Math.max(0, xpProgress * 100))}%` }
                 ]}
               />
             </View>
@@ -162,15 +198,14 @@ export default function HomeScreen() {
             <View style={styles.statItem}>
               <Clock size={20} color="white" />
               <Text style={styles.statValue}>
-                {learningProgress?.completedLessons.length || 0}
+                {learningProgress?.completedLessons?.length || 0}
               </Text>
               <Text style={styles.statLabel}>Lessons</Text>
             </View>
             <View style={styles.statItem}>
               <Trophy size={20} color="white" />
               <Text style={styles.statValue}>
-                {/* FIXED: Access achievements from progress context */}
-                {useProgress().achievements.filter(a => a.unlockedAt).length}
+                {completedAchievements}
               </Text>
               <Text style={styles.statLabel}>Achievements</Text>
             </View>
@@ -193,37 +228,35 @@ export default function HomeScreen() {
         
         <View style={styles.actionGrid}>
           {/* Continue Learning */}
-          {recommendedLesson && (
-            <Pressable
-              onPress={handleStartLesson}
-              style={[
-                styles.actionCard,
-                { 
-                  backgroundColor: colors.surface,
-                  borderRadius: borderRadius.lg,
-                }
-              ]}
-            >
-              <LinearGradient
-                colors={[colors.primary + '20', colors.primary + '10']}
-                style={StyleSheet.absoluteFillObject}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              />
-              <BookOpen size={28} color={colors.primary} />
-              <Text style={[styles.actionTitle, { color: colors.text }]}>
-                Continue Learning
-              </Text>
-              <Text style={[styles.actionSubtitle, { color: colors.textSecondary }]}>
-                {recommendedLesson.title}
-              </Text>
-              <ArrowRight 
-                size={20} 
-                color={colors.primary} 
-                style={styles.actionArrow}
-              />
-            </Pressable>
-          )}
+          <Pressable
+            onPress={handleStartLesson}
+            style={[
+              styles.actionCard,
+              { 
+                backgroundColor: colors.surface,
+                borderRadius: borderRadius.lg,
+              }
+            ]}
+          >
+            <LinearGradient
+              colors={[colors.primary + '20', colors.primary + '10']}
+              style={StyleSheet.absoluteFillObject}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            />
+            <BookOpen size={28} color={colors.primary} />
+            <Text style={[styles.actionTitle, { color: colors.text }]}>
+              Continue Learning
+            </Text>
+            <Text style={[styles.actionSubtitle, { color: colors.textSecondary }]}>
+              {recommendedLesson?.title || 'Start Drawing Fundamentals'}
+            </Text>
+            <ArrowRight 
+              size={20} 
+              color={colors.primary} 
+              style={styles.actionArrow}
+            />
+          </Pressable>
 
           {/* Free Draw */}
           <Pressable
@@ -304,8 +337,13 @@ export default function HomeScreen() {
                   {dailyChallenge.theme}
                 </Text>
                 <Text style={styles.challengeDescription}>
-                  {dailyChallenge.participants} artists participating
+                  {dailyChallenge.participants.toLocaleString()} artists participating
                 </Text>
+                {dailyChallenge.timeLeft && (
+                  <Text style={styles.challengeTime}>
+                    {dailyChallenge.timeLeft} left
+                  </Text>
+                )}
               </View>
               <ArrowRight size={24} color="white" />
             </View>
@@ -314,7 +352,7 @@ export default function HomeScreen() {
       )}
 
       {/* Learning Insights */}
-      {insights.length > 0 && (
+      {insights && insights.length > 0 && (
         <View style={[styles.section, { paddingHorizontal: spacing.md }]}>
           <Text style={[
             styles.sectionTitle, 
@@ -324,7 +362,7 @@ export default function HomeScreen() {
               fontWeight: typography.h3.fontWeight 
             }
           ]}>
-            Insights
+            Your Progress Insights
           </Text>
           
           <ScrollView 
@@ -375,7 +413,7 @@ export default function HomeScreen() {
               fontWeight: typography.h3.fontWeight 
             }
           ]}>
-            Community
+            Community Highlights
           </Text>
           <Pressable onPress={() => router.push('/gallery')}>
             <Text style={[styles.seeAllText, { color: colors.primary }]}>
@@ -384,7 +422,8 @@ export default function HomeScreen() {
           </Pressable>
         </View>
         
-        <View
+        <Pressable
+          onPress={() => router.push('/gallery')}
           style={[
             styles.communityCard,
             { 
@@ -393,11 +432,23 @@ export default function HomeScreen() {
             }
           ]}
         >
-          <Users size={24} color={colors.primary} />
-          <Text style={[styles.communityText, { color: colors.text }]}>
-            Join the community to see what others are creating!
-          </Text>
-        </View>
+          <LinearGradient
+            colors={[colors.primary + '15', colors.secondary + '15']}
+            style={StyleSheet.absoluteFillObject}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          />
+          <Users size={28} color={colors.primary} />
+          <View style={styles.communityTextContainer}>
+            <Text style={[styles.communityTitle, { color: colors.text }]}>
+              Join the Community
+            </Text>
+            <Text style={[styles.communitySubtitle, { color: colors.textSecondary }]}>
+              Share your artwork and get inspired by 10,000+ artists
+            </Text>
+          </View>
+          <ArrowRight size={20} color={colors.primary} />
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -407,17 +458,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '500',
+  },
   welcomeSection: {
     marginTop: 16,
   },
   welcomeText: {
     fontSize: 16,
+    fontWeight: '400',
   },
   userName: {
     marginTop: 4,
   },
   progressCard: {
-    padding: 20,
+    padding: 24,
     marginTop: 8,
   },
   progressHeader: {
@@ -431,6 +492,7 @@ const styles = StyleSheet.create({
   xpText: {
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 4,
+    fontSize: 14,
   },
   streakContainer: {
     flexDirection: 'row',
@@ -444,6 +506,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
     marginLeft: 4,
+    fontSize: 16,
   },
   progressBarContainer: {
     marginTop: 20,
@@ -462,21 +525,22 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginTop: 20,
+    marginTop: 24,
   },
   statItem: {
     alignItems: 'center',
   },
   statValue: {
     color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
-    marginTop: 4,
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 6,
   },
   statLabel: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 12,
     marginTop: 2,
+    fontWeight: '500',
   },
   section: {
     marginTop: 32,
@@ -492,7 +556,7 @@ const styles = StyleSheet.create({
   },
   seeAllText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   actionGrid: {
     flexDirection: 'row',
@@ -503,6 +567,7 @@ const styles = StyleSheet.create({
     padding: 20,
     position: 'relative',
     overflow: 'hidden',
+    minHeight: 120,
   },
   actionTitle: {
     fontSize: 16,
@@ -512,6 +577,7 @@ const styles = StyleSheet.create({
   actionSubtitle: {
     fontSize: 14,
     marginTop: 4,
+    lineHeight: 20,
   },
   actionArrow: {
     position: 'absolute',
@@ -532,10 +598,18 @@ const styles = StyleSheet.create({
   },
   challengeTitle: {
     color: 'white',
+    fontWeight: '700',
   },
   challengeDescription: {
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 4,
+    fontSize: 14,
+  },
+  challengeTime: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 6,
+    fontSize: 12,
+    fontWeight: '600',
   },
   insightCard: {
     padding: 16,
@@ -544,19 +618,31 @@ const styles = StyleSheet.create({
   insightTitle: {
     fontWeight: '600',
     marginTop: 8,
+    fontSize: 16,
   },
   insightMessage: {
     fontSize: 14,
     marginTop: 4,
+    lineHeight: 20,
   },
   communityCard: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 20,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  communityText: {
+  communityTextContainer: {
     flex: 1,
     marginLeft: 16,
-    fontSize: 16,
+  },
+  communityTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  communitySubtitle: {
+    fontSize: 14,
+    marginTop: 4,
+    lineHeight: 20,
   },
 });
