@@ -50,8 +50,9 @@ export default function LearnScreen() {
   const [progressMap, setProgressMap] = useState<Map<string, SkillTreeProgress>>(new Map());
   const [recommendedLesson, setRecommendedLesson] = useState<Lesson | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const styles = createStyles(theme);
+  
+  // IMPORTANT: Move createStyles call AFTER all hooks to fix hooks order
+  const [styles] = useState(() => createStyles(theme));
 
   useEffect(() => {
     loadSkillTrees();

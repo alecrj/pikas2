@@ -1,19 +1,19 @@
-import { User, UserPreferences, UserStats, UserProfile } from '../../types';
+import { User } from '../../types';
 import { dataManager } from '../core/DataManager';
+import { EventBus } from '../core/EventBus';
 import { errorHandler } from '../core/ErrorHandler';
 
 /**
- * User Profile Management System
- * Handles user accounts, preferences, and profile data with enterprise-level reliability
+ * Profile System - Google-level user management
+ * Handles user accounts, profiles, and authentication
  */
 export class ProfileSystem {
   private static instance: ProfileSystem;
   private currentUser: User | null = null;
-  private userListeners: Set<(user: User | null) => void> = new Set();
+  private eventBus: EventBus = EventBus.getInstance();
+  private isInitialized: boolean = false;
 
-  private constructor() {
-    this.loadUserFromStorage();
-  }
+  private constructor() {}
 
   public static getInstance(): ProfileSystem {
     if (!ProfileSystem.instance) {
@@ -22,76 +22,100 @@ export class ProfileSystem {
     return ProfileSystem.instance;
   }
 
-  private async loadUserFromStorage(): Promise<void> {
+  public async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+    
     try {
-      const storedUser = await dataManager.getUserProfile();
-      if (storedUser) {
-        this.currentUser = storedUser;
-        this.notifyListeners();
+      // Load saved user profile
+      const savedUser = await dataManager.getUserProfile();
+      if (savedUser) {
+        // Fix date serialization issue
+        this.currentUser = this.deserializeUser(savedUser);
+        this.eventBus.emit('user:loaded', { user: this.currentUser });
       }
+      
+      this.isInitialized = true;
+      console.log('ProfileSystem initialized', { hasUser: !!this.currentUser });
     } catch (error) {
       errorHandler.handleError(
-        errorHandler.createError('USER_LOAD_ERROR', 'Failed to load user profile', 'medium', error)
+        errorHandler.createError('PROFILE_INIT_ERROR', 'Failed to initialize profile system', 'medium', error)
       );
     }
   }
 
-  // FIXED: Corrected method signature to match expected interface
   public async createUser(
     email: string,
     username: string,
     displayName: string
-  ): Promise<User>;
-  public async createUser(
-    profile: Partial<UserProfile>
-  ): Promise<User>;
-  public async createUser(
-    emailOrProfile: string | Partial<UserProfile>,
-    username?: string,
-    displayName?: string
   ): Promise<User> {
     try {
-      let email: string;
-      let finalUsername: string;
-      let finalDisplayName: string;
+      const now = new Date();
+      const userId = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
-      if (typeof emailOrProfile === 'string') {
-        // Legacy three-parameter signature
-        email = emailOrProfile;
-        finalUsername = username!;
-        finalDisplayName = displayName!;
-      } else {
-        // New single-parameter signature
-        email = emailOrProfile.email || '';
-        finalUsername = emailOrProfile.displayName || 'User';
-        finalDisplayName = emailOrProfile.displayName || 'User';
-      }
-
       const newUser: User = {
-        id: this.generateUserId(),
-        email, // FIXED: Added email property
-        username: finalUsername,
-        displayName: finalDisplayName,
+        id: userId,
+        username: username.toLowerCase().replace(/\s+/g, ''),
+        displayName,
+        email,
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userId}`,
+        bio: 'Aspiring artist learning to draw!',
+        following: [],
+        followers: [],
+        isVerified: false,
+        isOnline: true,
+        lastSeenAt: Date.now(),
+        
+        // User progression
         level: 1,
         xp: 0,
         totalXP: 0,
         streakDays: 0,
-        lastActiveDate: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(), // FIXED: Added updatedAt property
-        preferences: this.getDefaultPreferences(),
-        stats: this.getDefaultStats(),
+        lastActiveDate: now,
+        createdAt: now,
+        updatedAt: now,
+        
+        // Preferences
+        preferences: {
+          theme: 'auto',
+          notifications: {
+            lessons: true,
+            achievements: true,
+            social: true,
+            challenges: true,
+          },
+          privacy: {
+            profile: 'public',
+            artwork: 'public',
+            progress: 'public',
+          },
+        },
+        
+        // Stats
+        stats: {
+          totalDrawingTime: 0,
+          totalLessonsCompleted: 0,
+          totalArtworksCreated: 0,
+          currentStreak: 0,
+          longestStreak: 0,
+          artworksCreated: 0,
+          artworksShared: 0,
+          challengesCompleted: 0,
+          skillsUnlocked: 0,
+          perfectLessons: 0,
+          lessonsCompleted: 0,
+        },
+        
+        // Achievements
         achievements: [],
-        following: [],
-        followers: [],
-        avatar: typeof emailOrProfile === 'object' ? emailOrProfile.avatar : undefined,
-        bio: undefined,
-        isVerified: false,
-        isOnline: true,
-        lastSeenAt: Date.now(),
       };
-
-      await this.setCurrentUser(newUser);
+      
+      // Save user
+      this.currentUser = newUser;
+      await this.saveUser();
+      
+      this.eventBus.emit('user:created', { user: newUser });
+      console.log('User created successfully:', { userId: newUser.id, displayName });
+      
       return newUser;
     } catch (error) {
       errorHandler.handleError(
@@ -101,316 +125,246 @@ export class ProfileSystem {
     }
   }
 
-  public async setCurrentUser(user: User): Promise<void> {
-    this.currentUser = user;
-    await dataManager.saveUserProfile(user);
-    errorHandler.setUserId(user.id);
-    this.notifyListeners();
-  }
-
   public getCurrentUser(): User | null {
     return this.currentUser;
   }
 
-  // FIXED: Added missing updateProfile method
-  public async updateProfile(userId: string, updates: Partial<User>): Promise<User> {
-    if (!this.currentUser || this.currentUser.id !== userId) {
-      throw new Error('User not found or unauthorized');
-    }
-
+  public async updateUser(updates: Partial<User>): Promise<User | null> {
+    if (!this.currentUser) return null;
+    
     try {
       this.currentUser = {
         ...this.currentUser,
         ...updates,
         updatedAt: new Date(),
       };
-
-      await dataManager.saveUserProfile(this.currentUser);
-      this.notifyListeners();
+      
+      await this.saveUser();
+      this.eventBus.emit('user:updated', { user: this.currentUser });
+      
       return this.currentUser;
     } catch (error) {
       errorHandler.handleError(
-        errorHandler.createError('PROFILE_UPDATE_ERROR', 'Failed to update profile', 'medium', error)
+        errorHandler.createError('USER_UPDATE_ERROR', 'Failed to update user', 'medium', error)
       );
-      throw error;
+      return null;
     }
   }
 
-  // FIXED: Added missing deleteUser method
-  public async deleteUser(userId: string): Promise<void> {
-    if (!this.currentUser || this.currentUser.id !== userId) {
-      throw new Error('User not found or unauthorized');
+  public async updateActivity(): Promise<void> {
+    if (!this.currentUser) return;
+    
+    const now = new Date();
+    const lastActive = new Date(this.currentUser.lastActiveDate);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const lastActiveDay = new Date(lastActive.getFullYear(), lastActive.getMonth(), lastActive.getDate());
+    
+    // Check if it's a new day
+    if (today.getTime() !== lastActiveDay.getTime()) {
+      // Check if streak continues
+      const daysSinceActive = Math.floor((today.getTime() - lastActiveDay.getTime()) / (1000 * 60 * 60 * 24));
+      
+      if (daysSinceActive === 1) {
+        // Continue streak
+        this.currentUser.streakDays++;
+        this.currentUser.stats.currentStreak++;
+        
+        if (this.currentUser.stats.currentStreak > this.currentUser.stats.longestStreak) {
+          this.currentUser.stats.longestStreak = this.currentUser.stats.currentStreak;
+        }
+        
+        this.eventBus.emit('user:streakContinued', { 
+          streak: this.currentUser.streakDays,
+          isNewRecord: this.currentUser.stats.currentStreak === this.currentUser.stats.longestStreak
+        });
+      } else if (daysSinceActive > 1) {
+        // Streak broken
+        this.currentUser.streakDays = 1;
+        this.currentUser.stats.currentStreak = 1;
+        
+        this.eventBus.emit('user:streakBroken', { 
+          previousStreak: this.currentUser.stats.currentStreak 
+        });
+      }
     }
+    
+    this.currentUser.lastActiveDate = now;
+    this.currentUser.lastSeenAt = now.getTime();
+    this.currentUser.isOnline = true;
+    
+    await this.saveUser();
+  }
 
+  public async addXP(amount: number, source: string): Promise<void> {
+    if (!this.currentUser || amount <= 0) return;
+    
     try {
-      await dataManager.remove('user_profile');
-      this.currentUser = null;
-      this.notifyListeners();
+      const previousLevel = this.currentUser.level;
+      
+      this.currentUser.xp += amount;
+      this.currentUser.totalXP += amount;
+      
+      // Calculate new level (100 XP per level initially, scaling up)
+      const newLevel = this.calculateLevel(this.currentUser.totalXP);
+      
+      if (newLevel > previousLevel) {
+        this.currentUser.level = newLevel;
+        
+        this.eventBus.emit('user:levelUp', {
+          previousLevel,
+          newLevel,
+          totalXP: this.currentUser.totalXP,
+        });
+      }
+      
+      await this.saveUser();
+      
+      this.eventBus.emit('user:xpGained', {
+        amount,
+        source,
+        totalXP: this.currentUser.totalXP,
+        level: this.currentUser.level,
+      });
     } catch (error) {
       errorHandler.handleError(
-        errorHandler.createError('USER_DELETE_ERROR', 'Failed to delete user', 'high', error)
+        errorHandler.createError('XP_ADD_ERROR', 'Failed to add XP', 'low', error)
       );
-      throw error;
     }
   }
 
-  public async updateUser(updates: Partial<User>): Promise<User | null> {
-    if (!this.currentUser) {
-      throw new Error('No user logged in');
-    }
-
-    this.currentUser = {
-      ...this.currentUser,
-      ...updates,
-      updatedAt: new Date(),
-    };
-
-    await dataManager.saveUserProfile(this.currentUser);
-    this.notifyListeners();
-    return this.currentUser;
-  }
-
-  public async updatePreferences(preferences: Partial<UserPreferences>): Promise<void> {
-    if (!this.currentUser) {
-      throw new Error('No user logged in');
-    }
-
-    // FIXED: Properly update nested preferences object
-    this.currentUser.preferences = {
-      ...this.currentUser.preferences,
-      ...preferences,
-    };
-
-    await dataManager.saveUserProfile(this.currentUser);
-    this.notifyListeners();
-  }
-
-  public async updateStats(statUpdates: Partial<UserStats>): Promise<void> {
-    if (!this.currentUser) {
-      throw new Error('No user logged in');
-    }
-
-    // FIXED: Properly update nested stats object
-    this.currentUser.stats = {
-      ...this.currentUser.stats,
-      ...statUpdates,
-    };
-
-    await dataManager.saveUserProfile(this.currentUser);
-    this.notifyListeners();
-  }
-
-  public async incrementStat(statName: keyof UserStats, amount: number = 1): Promise<void> {
-    if (!this.currentUser) {
-      throw new Error('No user logged in');
-    }
-
-    // FIXED: Properly access nested stats object
-    const currentValue = this.currentUser.stats[statName];
-    if (typeof currentValue === 'number') {
-      await this.updateStats({
-        [statName]: currentValue + amount,
-      } as Partial<UserStats>);
-    }
-  }
-
-  public async updateStreak(): Promise<void> {
+  public async recordAchievement(achievementId: string): Promise<void> {
     if (!this.currentUser) return;
-
-    const now = new Date();
-    // FIXED: Properly access lastActiveDate property
-    const lastActive = new Date(this.currentUser.lastActiveDate);
-    const daysSinceLastActive = Math.floor(
-      (now.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24)
-    );
-
-    if (daysSinceLastActive === 0) {
-      // Already active today
-      return;
-    } else if (daysSinceLastActive === 1) {
-      // Consecutive day
-      this.currentUser.streakDays++;
-    } else {
-      // Streak broken
-      this.currentUser.streakDays = 1;
-    }
-
-    // FIXED: Properly update lastActiveDate property
-    this.currentUser.lastActiveDate = now;
-    await dataManager.saveUserProfile(this.currentUser);
-    this.notifyListeners();
-  }
-
-  public async addXP(amount: number): Promise<{
-    leveledUp: boolean;
-    newLevel?: number;
-    xpToNextLevel: number;
-  }> {
-    if (!this.currentUser) {
-      throw new Error('No user logged in');
-    }
-
-    // FIXED: Properly access level and xp properties
-    const oldLevel = this.currentUser.level;
-    this.currentUser.xp += amount;
-    this.currentUser.totalXP += amount;
-
-    // Level calculation (100 XP per level with increasing requirements)
-    const xpForNextLevel = this.getXPRequiredForLevel(this.currentUser.level + 1);
     
-    let leveledUp = false;
-    while (this.currentUser.xp >= xpForNextLevel) {
-      this.currentUser.xp -= xpForNextLevel;
-      this.currentUser.level++;
-      leveledUp = true;
-    }
-
-    await dataManager.saveUserProfile(this.currentUser);
-    this.notifyListeners();
-
-    return {
-      leveledUp,
-      newLevel: leveledUp ? this.currentUser.level : undefined,
-      xpToNextLevel: this.getXPRequiredForLevel(this.currentUser.level + 1) - this.currentUser.xp,
+    // Check if already has achievement
+    const hasAchievement = this.currentUser.achievements.some(a => a.id === achievementId);
+    if (hasAchievement) return;
+    
+    // This would normally look up achievement details
+    const achievement = {
+      id: achievementId,
+      name: this.getAchievementName(achievementId),
+      description: this.getAchievementDescription(achievementId),
+      icon: '🏆',
+      category: 'milestone' as const,
+      requirements: { type: 'custom', value: 1 },
+      rarity: 'common' as const,
+      xpReward: 50,
+      unlockedAt: Date.now(),
     };
-  }
-
-  private getXPRequiredForLevel(level: number): number {
-    // Progressive XP requirements: 100, 150, 225, 337, ...
-    return Math.floor(100 * Math.pow(1.5, level - 1));
-  }
-
-  public async followUser(userId: string): Promise<void> {
-    if (!this.currentUser) {
-      throw new Error('No user logged in');
-    }
-
-    if (!this.currentUser.following.includes(userId)) {
-      this.currentUser.following.push(userId);
-      await dataManager.saveUserProfile(this.currentUser);
-      this.notifyListeners();
-    }
-  }
-
-  public async unfollowUser(userId: string): Promise<void> {
-    if (!this.currentUser) {
-      throw new Error('No user logged in');
-    }
-
-    const index = this.currentUser.following.indexOf(userId);
-    if (index > -1) {
-      this.currentUser.following.splice(index, 1);
-      await dataManager.saveUserProfile(this.currentUser);
-      this.notifyListeners();
-    }
+    
+    this.currentUser.achievements.push(achievement);
+    
+    // Add XP reward
+    await this.addXP(achievement.xpReward, `achievement:${achievementId}`);
+    
+    await this.saveUser();
+    
+    this.eventBus.emit('user:achievementUnlocked', { achievement });
   }
 
   public async logout(): Promise<void> {
     this.currentUser = null;
-    await dataManager.remove('user_profile');
-    this.notifyListeners();
+    await dataManager.remove('current_user');
+    this.eventBus.emit('user:logout');
   }
 
-  public subscribeToUser(callback: (user: User | null) => void): () => void {
-    this.userListeners.add(callback);
-    callback(this.currentUser); // Immediate callback with current state
-    return () => this.userListeners.delete(callback);
+  // Private methods
+
+  private async saveUser(): Promise<void> {
+    if (!this.currentUser) return;
+    
+    try {
+      // Serialize user for storage
+      const serializedUser = this.serializeUser(this.currentUser);
+      await dataManager.saveUserProfile(serializedUser);
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('USER_SAVE_ERROR', 'Failed to save user', 'medium', error)
+      );
+    }
   }
 
-  private notifyListeners(): void {
-    this.userListeners.forEach(callback => callback(this.currentUser));
+  private calculateLevel(totalXP: number): number {
+    // Progressive level scaling
+    // Level 1: 0-100 XP
+    // Level 2: 100-300 XP (+200)
+    // Level 3: 300-600 XP (+300)
+    // And so on...
+    
+    let level = 1;
+    let xpRequired = 100;
+    let cumulativeXP = 0;
+    
+    while (totalXP >= cumulativeXP + xpRequired) {
+      cumulativeXP += xpRequired;
+      level++;
+      xpRequired = level * 100;
+    }
+    
+    return level;
   }
 
-  private generateUserId(): string {
-    return `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  private getDefaultPreferences(): UserPreferences {
+  private serializeUser(user: User): any {
     return {
-      theme: 'auto', // FIXED: Use valid theme value
-      language: 'en',
-      notifications: {
-        lessons: true,
-        achievements: true,
-        social: true,
-        challenges: true,
-        lessonCompletions: true,
-        achievementUnlocks: true,
-        challengeAlerts: true,
-        socialActivity: true,
-      },
-      privacy: {
-        profile: 'public',
-        artwork: 'public',
-        progress: 'public',
-        showProgress: true,
-        allowMessages: true,
-        portfolioVisibility: 'public',
-      },
-      learning: {
-        dailyGoal: 100,
-        difficulty: 'adaptive',
-      },
-      drawingPreferences: {
-        defaultBrush: 'pencil',
-        pressureSensitivity: 0.8,
-        smoothing: 0.5,
-        gridEnabled: false,
-        autosaveInterval: 30000, // 30 seconds
-      },
+      ...user,
+      createdAt: user.createdAt.toISOString(),
+      updatedAt: user.updatedAt.toISOString(),
+      lastActiveDate: user.lastActiveDate.toISOString(),
     };
   }
 
-  private getDefaultStats(): UserStats {
+  private deserializeUser(data: any): User {
     return {
-      totalDrawingTime: 0,
-      totalLessonsCompleted: 0,
-      totalArtworksCreated: 0,
-      currentStreak: 0,
-      longestStreak: 0,
-      averageSessionTime: 0,
-      favoriteTools: [],
-      skillDistribution: {},
-      
-      // FIXED: Include all required stats properties
-      artworksCreated: 0,
-      artworksShared: 0,
-      challengesCompleted: 0,
-      skillsUnlocked: 0,
-      perfectLessons: 0,
-      lessonsCompleted: 0,
+      ...data,
+      createdAt: new Date(data.createdAt),
+      updatedAt: new Date(data.updatedAt),
+      lastActiveDate: new Date(data.lastActiveDate),
     };
   }
 
-  // Analytics helpers
-  public getProgressSummary(): {
-    level: number;
-    xp: number;
-    xpProgress: number;
-    streakDays: number;
-    totalArtworks: number;
-    completionRate: number;
-  } | null {
-    if (!this.currentUser) return null;
-
-    // FIXED: Properly access level and xp properties
-    const xpForCurrentLevel = this.getXPRequiredForLevel(this.currentUser.level);
-    const xpForNextLevel = this.getXPRequiredForLevel(this.currentUser.level + 1);
-    const xpProgress = this.currentUser.xp / xpForNextLevel;
-
-    // FIXED: Properly access nested stats properties
-    const completionRate = this.currentUser.stats.totalLessonsCompleted > 0
-      ? this.currentUser.stats.perfectLessons / this.currentUser.stats.totalLessonsCompleted
-      : 0;
-
-    return {
-      level: this.currentUser.level,
-      xp: this.currentUser.xp,
-      xpProgress,
-      streakDays: this.currentUser.streakDays,
-      totalArtworks: this.currentUser.stats.totalArtworksCreated,
-      completionRate,
+  private getAchievementName(id: string): string {
+    const names: Record<string, string> = {
+      'first_stroke': 'First Stroke',
+      'first_artwork': 'First Masterpiece',
+      'week_streak': 'Week Warrior',
+      'month_streak': 'Dedicated Artist',
+      'first_lesson': 'Student of Art',
+      'skill_tree_complete': 'Skill Master',
     };
+    return names[id] || 'Achievement';
+  }
+
+  private getAchievementDescription(id: string): string {
+    const descriptions: Record<string, string> = {
+      'first_stroke': 'Made your first mark on the canvas',
+      'first_artwork': 'Created your first artwork',
+      'week_streak': 'Practiced for 7 days in a row',
+      'month_streak': 'Practiced for 30 days in a row',
+      'first_lesson': 'Completed your first lesson',
+      'skill_tree_complete': 'Completed an entire skill tree',
+    };
+    return descriptions[id] || 'Achievement unlocked!';
+  }
+
+  // Public utility methods
+
+  public getXPToNextLevel(): number {
+    if (!this.currentUser) return 100;
+    
+    const currentLevelXP = this.calculateTotalXPForLevel(this.currentUser.level - 1);
+    const nextLevelXP = this.calculateTotalXPForLevel(this.currentUser.level);
+    const currentProgressXP = this.currentUser.totalXP - currentLevelXP;
+    
+    return nextLevelXP - currentLevelXP - currentProgressXP;
+  }
+
+  private calculateTotalXPForLevel(level: number): number {
+    // Sum of XP required for all levels up to this level
+    let total = 0;
+    for (let i = 1; i <= level; i++) {
+      total += i * 100;
+    }
+    return total;
   }
 }
 
