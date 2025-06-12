@@ -87,7 +87,7 @@ const PROFESSIONAL_COLORS = [
 ];
 
 export default function DrawScreen() {
-  const theme = useTheme();
+  const { theme } = useTheme();
   const { state: drawingState, dispatch: drawingDispatch } = useDrawing();
   const { addXP, addAchievement, updateLearningStats } = useUserProgress();
   
@@ -171,7 +171,7 @@ export default function DrawScreen() {
             });
             
             setCanvasReady(true);
-            console.log('Professional Canvas initialized with Skia backend');
+            console.log('✅ Professional Canvas initialized with Skia backend');
             
             return () => {
               unsubscribeStroke();
@@ -179,7 +179,7 @@ export default function DrawScreen() {
             };
           }
         } catch (error) {
-          console.error('Failed to initialize canvas:', error);
+          console.error('❌ Failed to initialize canvas:', error);
         }
       }
     };
@@ -529,6 +529,52 @@ export default function DrawScreen() {
     };
   }, []);
 
+  // FIXED: Replace SVG progress ring with React Native alternative
+  const renderProgressRing = useCallback((progress: number, size: number = 60) => {
+    const radius = (size - 8) / 2;
+    const strokeWidth = 4;
+    const normalizedRadius = radius - strokeWidth * 2;
+    const circumference = normalizedRadius * 2 * Math.PI;
+    const strokeDasharray = `${circumference} ${circumference}`;
+    const strokeDashoffset = circumference - (progress / 100) * circumference;
+    
+    return (
+      <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
+        {/* Background circle */}
+        <View
+          style={{
+            position: 'absolute',
+            width: size - strokeWidth,
+            height: size - strokeWidth,
+            borderRadius: (size - strokeWidth) / 2,
+            borderWidth: strokeWidth,
+            borderColor: theme.colors.border,
+          }}
+        />
+        {/* Progress circle - simplified version using borderColor trick */}
+        <View
+          style={{
+            position: 'absolute',
+            width: size - strokeWidth,
+            height: size - strokeWidth,
+            borderRadius: (size - strokeWidth) / 2,
+            borderWidth: strokeWidth,
+            borderColor: 'transparent',
+            borderTopColor: theme.colors.primary,
+            transform: [
+              { rotate: '-90deg' },
+              { rotate: `${(progress / 100) * 360}deg` }
+            ],
+          }}
+        />
+        {/* Progress text */}
+        <Text style={[styles.progressNumber, { color: theme.colors.text }]}>
+          {Math.round(progress)}%
+        </Text>
+      </View>
+    );
+  }, [theme.colors]);
+
   const renderBrushPicker = useCallback(() => {
     const allBrushes = brushEngine.getAllBrushes();
     const categories: BrushCategory[] = ['pencil', 'ink', 'paint', 'watercolor', 'airbrush', 'marker', 'texture'];
@@ -655,7 +701,7 @@ export default function DrawScreen() {
   if (!canvasReady) {
     return (
       <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Initializing Canvas...</Text>
+        <Text style={styles.loadingText}>Initializing Professional Canvas...</Text>
       </View>
     );
   }
@@ -813,6 +859,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 16,
     color: theme.colors.text,
     marginTop: 16,
+    fontWeight: '600',
   },
   canvasContainer: {
     flex: 1,
@@ -836,6 +883,10 @@ const createStyles = (theme: any) => StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+  },
+  progressNumber: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   drawingIndicator: {
     position: 'absolute',

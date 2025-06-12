@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,15 @@ import {
   SafeAreaView,
   Alert,
   RefreshControl,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
+import Animated, { FadeInUp, FadeInDown, SlideInRight } from 'react-native-reanimated';
 import { useTheme } from '../../src/contexts/ThemeContext';
 import { useUserProgress } from '../../src/contexts/UserProgressContext';
 import { useLearning } from '../../src/contexts/LearningContext';
 import { Lesson, SkillTree } from '../../src/types';
+import * as Haptics from 'expo-haptics';
 import {
   BookOpen,
   Play,
@@ -24,11 +26,16 @@ import {
   Target,
   Zap,
   TrendingUp,
+  Clock,
+  Award,
+  CheckCircle,
+  Circle,
+  Lock,
 } from 'lucide-react-native';
 
 export default function LearnScreen() {
   // FIXED: All hooks called unconditionally at the top level in the same order every time
-  const theme = useTheme();
+  const { theme } = useTheme();
   const router = useRouter();
   const { user, progress, addXP } = useUserProgress();
   const { 
@@ -50,45 +57,45 @@ export default function LearnScreen() {
   const [showInsights, setShowInsights] = useState(false);
   const [expandedSkillTree, setExpandedSkillTree] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastInteraction, setLastInteraction] = useState(Date.now());
   const [screenMounted, setScreenMounted] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
+
+  // FIXED: Memoize styles to prevent unnecessary recalculations
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   // FIXED: useEffect hooks called unconditionally
   useEffect(() => {
     setScreenMounted(true);
-    return () => setScreenMounted(false);
+    console.log('🎓 Learn Screen: Mounted');
+    return () => {
+      setScreenMounted(false);
+      console.log('🎓 Learn Screen: Unmounted');
+    };
   }, []);
 
   useEffect(() => {
     // Initialize default skill tree if none selected
-    if (!currentSkillTree && skillTrees.length > 0) {
+    if (!currentSkillTree && skillTrees && skillTrees.length > 0) {
       const defaultTree = skillTrees.find(tree => tree.id === 'fundamentals') || skillTrees[0];
       if (defaultTree) {
+        console.log(`🎓 Setting default skill tree: ${defaultTree.name}`);
         setCurrentSkillTree(defaultTree);
         setSelectedSkillTree(defaultTree);
+        setExpandedSkillTree(defaultTree.id);
       }
     }
   }, [skillTrees, currentSkillTree, setCurrentSkillTree]);
 
-  useEffect(() => {
-    // Update interaction timestamp periodically
-    const interval = setInterval(() => {
-      setLastInteraction(Date.now());
-    }, 30000); // Every 30 seconds
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // FIXED: All callback functions defined unconditionally
+  // FIXED: All callback functions defined unconditionally with proper error handling
   const handleLessonStart = useCallback(async (lesson: Lesson) => {
     if (isLoadingLesson) return;
 
     try {
+      console.log(`🎓 Starting lesson: ${lesson.title}`);
       setIsLoadingLesson(true);
       
       // Check if lesson is available
-      const lessonProgress = getLessonProgress(lesson.id);
+      const lessonProgress = getLessonProgress ? getLessonProgress(lesson.id) : 0;
       
       if (lessonProgress >= 100) {
         Alert.alert(
@@ -107,12 +114,19 @@ export default function LearnScreen() {
         return;
       }
 
+      // Haptic feedback
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
       // Start the lesson
-      await startLesson(lesson);
+      if (startLesson) {
+        await startLesson(lesson);
+      }
+      
+      // Navigate to lesson
       router.push(`/lesson/${lesson.id}`);
       
     } catch (error) {
-      console.error('Failed to start lesson:', error);
+      console.error('❌ Failed to start lesson:', error);
       Alert.alert('Error', 'Failed to start lesson. Please try again.');
     } finally {
       setIsLoadingLesson(false);
@@ -120,71 +134,83 @@ export default function LearnScreen() {
   }, [isLoadingLesson, getLessonProgress, startLesson, router]);
 
   const handleSkillTreeSelect = useCallback((skillTree: SkillTree) => {
+    console.log(`🎓 Selected skill tree: ${skillTree.name}`);
     setSelectedSkillTree(skillTree);
-    setCurrentSkillTree(skillTree);
+    if (setCurrentSkillTree) {
+      setCurrentSkillTree(skillTree);
+    }
     setExpandedSkillTree(skillTree.id);
+    
+    // Haptic feedback
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, [setCurrentSkillTree]);
 
   const toggleSkillTreeExpansion = useCallback((treeId: string) => {
     setExpandedSkillTree(prev => prev === treeId ? null : treeId);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
+      console.log('🎓 Refreshing learn content...');
       // Refresh data logic would go here
       await new Promise(resolve => setTimeout(resolve, 1000));
     } catch (error) {
-      console.error('Refresh failed:', error);
+      console.error('❌ Refresh failed:', error);
     } finally {
       setRefreshing(false);
     }
   }, []);
 
-  const styles = createStyles(theme);
-
-  const renderProgressRing = (progress: number, size: number = 60) => {
+  // FIXED: Replace SVG progress ring with React Native-compatible component
+  const renderProgressRing = useCallback((progress: number, size: number = 60) => {
     const radius = (size - 8) / 2;
-    const circumference = 2 * Math.PI * radius;
-    const strokeDasharray = circumference;
-    const strokeDashoffset = circumference - (progress / 100) * circumference;
-
+    const strokeWidth = 4;
+    
     return (
-      <View style={{ width: size, height: size }}>
-        <svg width={size} height={size} style={{ position: 'absolute' }}>
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke={theme.colors.border}
-            strokeWidth="4"
-            fill="transparent"
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke={theme.colors.primary}
-            strokeWidth="4"
-            fill="transparent"
-            strokeDasharray={strokeDasharray}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          />
-        </svg>
-        <View style={[styles.progressText, { width: size, height: size }]}>
-          <Text style={[styles.progressNumber, { color: theme.colors.text }]}>
-            {Math.round(progress)}%
-          </Text>
-        </View>
+      <View style={{ width: size, height: size, justifyContent: 'center', alignItems: 'center' }}>
+        {/* Background circle */}
+        <View
+          style={{
+            position: 'absolute',
+            width: size - strokeWidth,
+            height: size - strokeWidth,
+            borderRadius: (size - strokeWidth) / 2,
+            borderWidth: strokeWidth,
+            borderColor: theme.colors.border,
+          }}
+        />
+        {/* Progress circle - using a clever border trick */}
+        <View
+          style={{
+            position: 'absolute',
+            width: size - strokeWidth,
+            height: size - strokeWidth,
+            borderRadius: (size - strokeWidth) / 2,
+            borderWidth: strokeWidth,
+            borderColor: 'transparent',
+            borderTopColor: theme.colors.primary,
+            borderRightColor: progress > 25 ? theme.colors.primary : 'transparent',
+            borderBottomColor: progress > 50 ? theme.colors.primary : 'transparent',
+            borderLeftColor: progress > 75 ? theme.colors.primary : 'transparent',
+            transform: [
+              { rotate: '-90deg' },
+            ],
+          }}
+        />
+        {/* Progress text */}
+        <Text style={[styles.progressNumber, { color: theme.colors.text }]}>
+          {Math.round(progress)}%
+        </Text>
       </View>
     );
-  };
+  }, [theme.colors, styles.progressNumber]);
 
-  const renderSkillTree = (skillTree: SkillTree) => {
+  const renderSkillTree = useCallback((skillTree: SkillTree) => {
     const isExpanded = expandedSkillTree === skillTree.id;
     const isSelected = selectedSkillTree?.id === skillTree.id;
+    const progress = skillTree.progress || 0;
     
     return (
       <Animated.View 
@@ -211,14 +237,14 @@ export default function LearnScreen() {
             </Text>
             <View style={styles.skillTreeStats}>
               <Text style={[styles.statText, { color: theme.colors.textSecondary }]}>
-                {skillTree.lessons.length} lessons • {skillTree.estimatedDuration}h
+                {skillTree.lessons?.length || 0} lessons • {skillTree.estimatedDuration || 0}h
               </Text>
             </View>
           </View>
-          {renderProgressRing(skillTree.progress || 0, 50)}
+          {renderProgressRing(progress, 50)}
         </Pressable>
 
-        {isExpanded && (
+        {isExpanded && skillTree.lessons && (
           <Animated.View 
             entering={FadeInDown}
             style={styles.lessonsContainer}
@@ -230,14 +256,14 @@ export default function LearnScreen() {
         )}
       </Animated.View>
     );
-  };
+  }, [expandedSkillTree, selectedSkillTree, handleSkillTreeSelect, renderProgressRing, styles, theme.colors]);
 
-  const renderLesson = (lesson: Lesson, index: number) => {
-    const progress = getLessonProgress(lesson.id);
+  const renderLesson = useCallback((lesson: Lesson, index: number) => {
+    const progress = getLessonProgress ? getLessonProgress(lesson.id) : 0;
     const isCompleted = progress >= 100;
-    const isAvailable = lesson.prerequisites.every(prereq => 
-      completedLessons.includes(prereq)
-    );
+    const isAvailable = lesson.prerequisites ? 
+      lesson.prerequisites.every(prereq => completedLessons?.includes(prereq)) : 
+      true;
 
     return (
       <Pressable
@@ -258,10 +284,16 @@ export default function LearnScreen() {
         disabled={!isAvailable || isLoadingLesson}
       >
         <View style={styles.lessonHeader}>
-          <View style={styles.lessonNumber}>
-            <Text style={[styles.lessonNumberText, { color: theme.colors.primary }]}>
-              {index + 1}
-            </Text>
+          <View style={[styles.lessonNumber, { backgroundColor: theme.colors.primary + '20' }]}>
+            {isCompleted ? (
+              <CheckCircle size={16} color={theme.colors.success} />
+            ) : isAvailable ? (
+              <Text style={[styles.lessonNumberText, { color: theme.colors.primary }]}>
+                {index + 1}
+              </Text>
+            ) : (
+              <Lock size={16} color={theme.colors.textSecondary} />
+            )}
           </View>
           <View style={styles.lessonInfo}>
             <Text style={[styles.lessonTitle, { color: theme.colors.text }]}>
@@ -272,12 +304,15 @@ export default function LearnScreen() {
             </Text>
             <View style={styles.lessonMeta}>
               <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>
-                {lesson.estimatedTime}min • {lesson.rewards.xp} XP
+                <Clock size={12} color={theme.colors.textSecondary} />
+                {' '}{lesson.estimatedTime || 10}min • {lesson.rewards?.xp || 10} XP
               </Text>
             </View>
           </View>
           <View style={styles.lessonAction}>
-            {isCompleted ? (
+            {isLoadingLesson ? (
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            ) : isCompleted ? (
               <Trophy size={24} color={theme.colors.success} />
             ) : (
               <Play size={24} color={isAvailable ? theme.colors.primary : theme.colors.textSecondary} />
@@ -299,10 +334,10 @@ export default function LearnScreen() {
         )}
       </Pressable>
     );
-  };
+  }, [getLessonProgress, completedLessons, handleLessonStart, isLoadingLesson, styles, theme.colors]);
 
-  const renderInsights = () => {
-    if (insights.length === 0) return null;
+  const renderInsights = useCallback(() => {
+    if (!insights || insights.length === 0) return null;
 
     return (
       <Animated.View 
@@ -328,6 +363,7 @@ export default function LearnScreen() {
                   { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
                 ]}
               >
+                <TrendingUp size={20} color={theme.colors.primary} />
                 <Text style={[styles.insightTitle, { color: theme.colors.text }]}>
                   {insight.title}
                 </Text>
@@ -340,10 +376,10 @@ export default function LearnScreen() {
         )}
       </Animated.View>
     );
-  };
+  }, [insights, showInsights, styles, theme.colors]);
 
-  const renderRecommendations = () => {
-    if (recommendedLessons.length === 0) return null;
+  const renderRecommendations = useCallback(() => {
+    if (!recommendedLessons || recommendedLessons.length === 0) return null;
 
     return (
       <Animated.View 
@@ -367,26 +403,77 @@ export default function LearnScreen() {
               ]}
               onPress={() => handleLessonStart(lesson)}
             >
+              <Star size={20} color={theme.colors.primary} />
               <Text style={[styles.recommendationTitle, { color: theme.colors.text }]}>
                 {lesson.title}
               </Text>
               <Text style={[styles.recommendationMeta, { color: theme.colors.textSecondary }]}>
-                {lesson.estimatedTime}min • {lesson.rewards.xp} XP
+                <Clock size={12} color={theme.colors.textSecondary} />
+                {' '}{lesson.estimatedTime || 10}min • {lesson.rewards?.xp || 10} XP
               </Text>
             </Pressable>
           ))}
         </ScrollView>
       </Animated.View>
     );
-  };
+  }, [recommendedLessons, handleLessonStart, styles, theme.colors]);
+
+  const renderStats = useCallback(() => {
+    const totalLessons = skillTrees?.reduce((sum, tree) => sum + (tree.lessons?.length || 0), 0) || 0;
+    const completedCount = completedLessons?.length || 0;
+    const streakDays = currentStreak || 0;
+    
+    return (
+      <Animated.View 
+        entering={FadeInUp.delay(100)}
+        style={styles.statsContainer}
+      >
+        <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
+          <BookOpen size={24} color={theme.colors.primary} />
+          <Text style={[styles.statNumber, { color: theme.colors.text }]}>{completedCount}</Text>
+          <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Completed</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
+          <Zap size={24} color={theme.colors.warning} />
+          <Text style={[styles.statNumber, { color: theme.colors.text }]}>{streakDays}</Text>
+          <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Day Streak</Text>
+        </View>
+        
+        <View style={[styles.statCard, { backgroundColor: theme.colors.surface }]}>
+          <Target size={24} color={theme.colors.success} />
+          <Text style={[styles.statNumber, { color: theme.colors.text }]}>{totalLessons}</Text>
+          <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Total Lessons</Text>
+        </View>
+      </Animated.View>
+    );
+  }, [skillTrees, completedLessons, currentStreak, styles, theme.colors]);
 
   // Render loading state
-  if (!screenMounted || skillTrees.length === 0) {
+  if (!screenMounted) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={[styles.loadingText, { color: theme.colors.text }]}>
             Loading learning content...
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Render empty state
+  if (!skillTrees || skillTrees.length === 0) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.emptyContainer}>
+          <BookOpen size={64} color={theme.colors.textSecondary} />
+          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+            No Lessons Available
+          </Text>
+          <Text style={[styles.emptyDescription, { color: theme.colors.textSecondary }]}>
+            Check back soon for new learning content!
           </Text>
         </View>
       </SafeAreaView>
@@ -401,8 +488,10 @@ export default function LearnScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
+            tintColor={theme.colors.primary}
           />
         }
+        showsVerticalScrollIndicator={false}
       >
         <Animated.View entering={FadeInUp} style={styles.header}>
           <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
@@ -413,6 +502,7 @@ export default function LearnScreen() {
           </Text>
         </Animated.View>
 
+        {renderStats()}
         {renderInsights()}
         {renderRecommendations()}
 
@@ -422,6 +512,9 @@ export default function LearnScreen() {
           </Text>
           {skillTrees.map(renderSkillTree)}
         </View>
+
+        {/* Bottom padding for safe area */}
+        <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -442,9 +535,24 @@ const createStyles = (theme: any) => StyleSheet.create({
   loadingText: {
     fontSize: 16,
     fontWeight: '500',
+    marginTop: 16,
   },
-  refreshIndicator: {
-    height: 40,
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyDescription: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
   },
   header: {
     padding: 20,
@@ -457,6 +565,34 @@ const createStyles = (theme: any) => StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 16,
+    lineHeight: 24,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+    gap: 12,
+  },
+  statCard: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginTop: 8,
+  },
+  statLabel: {
+    fontSize: 12,
+    marginTop: 4,
+    textAlign: 'center',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -483,6 +619,7 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
+    marginTop: 8,
   },
   insightDescription: {
     fontSize: 14,
@@ -503,9 +640,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 4,
+    marginTop: 8,
   },
   recommendationMeta: {
     fontSize: 14,
+    marginTop: 4,
   },
   skillTreesSection: {
     padding: 20,
@@ -520,6 +659,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     alignItems: 'center',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   skillTreeInfo: {
     flex: 1,
@@ -533,17 +677,13 @@ const createStyles = (theme: any) => StyleSheet.create({
   skillTreeDescription: {
     fontSize: 14,
     marginBottom: 8,
+    lineHeight: 20,
   },
   skillTreeStats: {
     flexDirection: 'row',
   },
   statText: {
     fontSize: 12,
-  },
-  progressText: {
-    position: 'absolute',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   progressNumber: {
     fontSize: 12,
@@ -557,6 +697,11 @@ const createStyles = (theme: any) => StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     marginBottom: 8,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   lessonHeader: {
     flexDirection: 'row',
@@ -566,7 +711,6 @@ const createStyles = (theme: any) => StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(99, 102, 241, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -586,12 +730,16 @@ const createStyles = (theme: any) => StyleSheet.create({
   lessonDescription: {
     fontSize: 14,
     marginBottom: 4,
+    lineHeight: 20,
   },
   lessonMeta: {
     flexDirection: 'row',
+    alignItems: 'center',
   },
   metaText: {
     fontSize: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   lessonAction: {
     width: 32,

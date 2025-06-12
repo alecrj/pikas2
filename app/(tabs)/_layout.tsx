@@ -62,7 +62,7 @@ export default function TabLayout() {
           Platform.OS === 'ios' ? (
             <BlurView
               intensity={100}
-              tint={theme?.isDark ? 'dark' : 'light'}
+              tint={theme?.name === 'dark' ? 'dark' : 'light'}
               style={{
                 position: 'absolute',
                 top: 0,

@@ -32,10 +32,10 @@ class DataManager {
       if (value === null) return null;
 
       const parsed = JSON.parse(value);
-      
+
       // Cache the result
       this.cache.set(key, parsed);
-      
+
       return parsed;
     } catch (error) {
       console.error(`Failed to get data for key ${key}:`, error);
@@ -55,10 +55,10 @@ class DataManager {
       this.writeQueue.set(key, writePromise);
 
       await writePromise;
-      
+
       // Update cache
       this.cache.set(key, value);
-      
+
       // Clear from queue
       this.writeQueue.delete(key);
     } catch (error) {
@@ -307,12 +307,12 @@ class DataManager {
         data: eventData,
         timestamp: Date.now(),
       });
-      
+
       // Keep only last 1000 events
       if (events.length > 1000) {
         events.splice(0, events.length - 1000);
       }
-      
+
       await this.set('analytics_events', events);
     } catch (error) {
       console.error('Failed to record event:', error);
@@ -349,7 +349,7 @@ class DataManager {
     try {
       const allKeys = await AsyncStorage.getAllKeys();
       const allData: Record<string, any> = {};
-      
+
       for (const key of allKeys) {
         const value = await AsyncStorage.getItem(key);
         if (value) {
@@ -360,7 +360,7 @@ class DataManager {
           }
         }
       }
-      
+
       return {
         exportDate: Date.now(),
         version: '1.0.0',
@@ -377,15 +377,15 @@ class DataManager {
       if (!exportData || !exportData.data) {
         throw new Error('Invalid export data format');
       }
-      
+
       // Clear existing data
       await this.clear();
-      
+
       // Import new data
       for (const [key, value] of Object.entries(exportData.data)) {
         await AsyncStorage.setItem(key, JSON.stringify(value));
       }
-      
+
       // Clear cache to force reload
       this.clearCache();
     } catch (error) {
@@ -399,9 +399,9 @@ class DataManager {
   private deepMerge(target: any, source: any): any {
     if (typeof target !== 'object' || target === null) return source;
     if (typeof source !== 'object' || source === null) return target;
-    
+
     const result = { ...target };
-    
+
     for (const key in source) {
       if (source.hasOwnProperty(key)) {
         if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
@@ -411,7 +411,7 @@ class DataManager {
         }
       }
     }
-    
+
     return result;
   }
 
@@ -423,18 +423,18 @@ class DataManager {
     try {
       const allKeys = await AsyncStorage.getAllKeys();
       let estimatedSize = 0;
-      
+
       for (const key of allKeys.slice(0, 10)) { // Sample first 10 keys
         const value = await AsyncStorage.getItem(key);
         if (value) {
           estimatedSize += value.length;
         }
       }
-      
+
       // Extrapolate total size
-      const avgKeySize = estimatedSize / Math.min(10, allKeys.length);
+      const avgKeySize = estimatedSize / Math.max(1, Math.min(10, allKeys.length));
       const totalEstimatedSize = avgKeySize * allKeys.length;
-      
+
       return {
         totalKeys: allKeys.length,
         estimatedSize: totalEstimatedSize,
@@ -455,10 +455,9 @@ class DataManager {
   public async migrateData(fromVersion: string, toVersion: string): Promise<void> {
     try {
       console.log(`Migrating data from ${fromVersion} to ${toVersion}`);
-      
+
       // Add migration logic here as needed
-      // This is where you'd handle data structure changes between versions
-      
+
       await this.set('data_version', toVersion);
     } catch (error) {
       console.error('Failed to migrate data:', error);
@@ -469,6 +468,38 @@ class DataManager {
   public async getDataVersion(): Promise<string> {
     const version = await this.get<string>('data_version');
     return version || '1.0.0';
+  }
+
+  // ---- EXTRA: Save and Load Methods ----
+
+  /**
+   * Save data to persistent storage
+   */
+  async save<T>(key: string, value: T): Promise<void> {
+    try {
+      const serializedValue = JSON.stringify(value);
+      await AsyncStorage.setItem(key, serializedValue);
+      console.log(`✅ Saved data for key: ${key}`);
+    } catch (error) {
+      console.error(`❌ Failed to save data for key ${key}:`, error);
+      throw new Error(`Failed to save data: ${error}`);
+    }
+  }
+
+  /**
+   * Load data from persistent storage
+   */
+  async load<T>(key: string, defaultValue?: T): Promise<T | null> {
+    try {
+      const data = await AsyncStorage.getItem(key);
+      if (data) {
+        return JSON.parse(data) as T;
+      }
+      return defaultValue || null;
+    } catch (error) {
+      console.error(`❌ Failed to load data for key ${key}:`, error);
+      return defaultValue || null;
+    }
   }
 }
 
