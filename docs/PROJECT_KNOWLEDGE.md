@@ -1,227 +1,290 @@
-# 📚 Pikaso Project Knowledge - UPDATED RECOVERY STATUS
+# 📚 Pikaso Project Knowledge - PHASE 2 INITIALIZATION FIXES
 
 **Project Classification**: Production-Ready Drawing App (React Native + Expo)  
-**Current Status**: 🔥 **CRITICAL PATH ERROR - IMPORT PATHS** - Fixable in 15 minutes  
-**Last Updated**: June 11, 2025 | **Urgency**: HIGH PRIORITY  
+**Current Status**: 🔄 **PHASE 2 - ENGINE INITIALIZATION** - Critical path to production  
+**Last Updated**: June 12, 2025 | **Priority**: HIGH - Engine Bootstrap  
 **GitHub**: https://github.com/alecrj/pik.git  
 
 ---
 
-## 🚨 **CRITICAL ISSUE - EXACT PROBLEM IDENTIFIED**
+## 🎯 **CURRENT STATUS - PHASE 2**
 
-### **🎯 Root Cause Analysis**
-```
-ERROR: Unable to resolve "../../src/contexts/ThemeContext" from "app/index.tsx"
-CAUSE: Incorrect import path - should be "../src/contexts/ThemeContext"
-IMPACT: App won't bundle, preventing any navigation
-FIX TIME: 15 minutes of path corrections
-```
+### **✅ PHASE 1 COMPLETED (100%)**
+- ✅ **TypeScript Compilation**: All 13 errors resolved
+- ✅ **React Hooks Order**: Critical crash issue fixed
+- ✅ **Navigation Architecture**: Smooth tab navigation working
+- ✅ **User System**: Onboarding and account creation functional
+- ✅ **Core Architecture**: Google-level modular engine system established
 
-### **📊 Current Technical Health**
-| Component | Status | Issue | Action Required |
-|-----------|--------|-------|-----------------|
-| **Project Structure** | ✅ Perfect | None | None |
-| **Dependencies** | ✅ Working | None | None |
-| **TypeScript Setup** | ✅ Working | None | None |
-| **Import Paths** | ❌ Broken | Wrong relative paths | **CRITICAL - Fix imports** |
-| **Core Files** | ✅ Present | None | Ready for testing |
+### **🔄 PHASE 2 CURRENT ISSUES**
+| Component | Status | Issue | Next Action |
+|-----------|--------|-------|-------------|
+| **Learning System** | ❌ Blocked | SkillTreeManager.initialize is undefined | **Fix engine singletons** |
+| **Drawing System** | ❌ Blocked | Canvas initialization hanging | **Fix drawing engine bootstrap** |
+| **Music System** | 🚫 Missing | No background music implementation | **Add Expo AV system** |
+| **Content System** | 🚫 Missing | No lesson content loading | **Implement lesson data** |
 
 ---
 
-## 🛠️ **IMMEDIATE RECOVERY PLAN**
+## 🚨 **CRITICAL PATH - NEXT SESSION PRIORITIES**
 
-### **Phase 1: Fix Import Paths (15 minutes)**
-**Objective**: Get app bundling and loading tabs
+### **Priority 1: Engine Initialization (30 min)**
+**Objective**: Fix SkillTreeManager and engine singleton bootstrap
 
-**Critical Files to Fix**:
-1. `app/index.tsx` - Fix context import paths
-2. `app/(tabs)/_layout.tsx` - Fix context import paths  
-3. `app/(tabs)/index.tsx` - Fix context import paths
-4. Any other files importing from `src/`
+**Root Cause**: Missing singleton exports and initialization methods
+```javascript
+// Current Error:
+❌ skillTreeManager.initialize is not a function (it is undefined)
 
-**Path Correction Rule**:
+// Required Files to Fix:
+1. src/engines/learning/SkillTreeManager.ts - Add singleton export
+2. src/engines/learning/LessonEngine.ts - Add singleton export  
+3. src/engines/drawing/BrushEngine.ts - Add initialization method
+4. src/engines/core/DataManager.ts - Add learning data methods
+```
+
+### **Priority 2: Drawing System Completion (45 min)**
+**Objective**: Procreate-level drawing capabilities
+
+**Components Needed**:
+- ✅ Canvas component structure (exists)
+- ❌ Apple Pencil pressure sensitivity (needs implementation)
+- ❌ Professional brush engine (needs completion)
+- ❌ Layer system functionality (needs implementation)
+- ❌ 60fps performance optimization (needs tuning)
+
+### **Priority 3: Music System Implementation (20 min)**
+**Objective**: Background music with track selection per page
+
+**Technical Requirements**:
+- **Expo AV integration** for audio playback
+- **Track library system** with categorized playlists
+- **Page-specific music** (drawing, learning, gallery themes)
+- **Volume controls** and fade transitions
+- **User preferences** for music on/off
+
+---
+
+## 🎵 **MUSIC SYSTEM ARCHITECTURE**
+
+### **Track Categories**
 ```typescript
-// ❌ WRONG (from app/ files)
-import { useTheme } from '../../src/contexts/ThemeContext';
+interface MusicTrack {
+  id: string;
+  title: string;
+  artist: string;
+  category: 'focus' | 'creative' | 'learning' | 'ambient';
+  url: string;
+  duration: number;
+  bpm?: number;
+}
 
-// ✅ CORRECT (from app/ files)  
-import { useTheme } from '../src/contexts/ThemeContext';
+// Page-Specific Playlists:
+- Drawing: Focus/Ambient tracks (lo-fi, instrumental)
+- Learning: Concentration tracks (binaural beats, nature sounds)
+- Gallery: Creative tracks (upbeat, inspiring)
+- Profile: Personal tracks (user customizable)
 ```
 
-### **Phase 2: Validate Navigation (30 minutes)**
-**Objective**: Ensure all 5 tabs load without crashes
-
-**Test Sequence**:
-1. ✅ App launches successfully
-2. ✅ Tab navigation loads
-3. ✅ All 5 tabs render (Home, Draw, Learn, Gallery, Profile)
-4. ✅ Navigation between tabs works
-5. ✅ No runtime errors in console
-
-### **Phase 3: Context Validation (45 minutes)**
-**Objective**: Verify all contexts provide data correctly
-
-**Context Testing**:
-1. ✅ ThemeContext provides colors and theme data
-2. ✅ UserProgressContext provides user and progress data
-3. ✅ DrawingContext provides drawing state
-4. ✅ LearningContext provides lessons and skill trees
-
-### **Phase 4: Feature Validation (60 minutes)**
-**Objective**: Test core user flows work end-to-end
-
-**User Flow Testing**:
-1. ✅ Onboarding → Tabs navigation
-2. ✅ Basic drawing functionality  
-3. ✅ Lesson viewing and interaction
-4. ✅ Profile and progress display
-5. ✅ Settings and navigation
-
----
-
-## 📁 **FILES NEEDED FOR NEXT DEVELOPER SESSION**
-
-### **🚨 CRITICAL FILES (Must include)**
-```
-app/
-├── index.tsx                    # Main navigation logic
-├── _layout.tsx                  # Root layout
-├── (tabs)/
-│   ├── _layout.tsx             # Tab navigation setup
-│   ├── index.tsx               # Home screen
-│   ├── draw.tsx                # Drawing screen
-│   ├── learn.tsx               # Learning screen
-│   ├── gallery.tsx             # Gallery screen
-│   └── profile.tsx             # Profile screen
-└── onboarding.tsx              # User onboarding
-
-src/contexts/
-├── ThemeContext.tsx            # Theme and styling
-├── UserProgressContext.tsx     # User data and progress
-├── DrawingContext.tsx          # Drawing state
-└── LearningContext.tsx         # Learning system
-
-src/engines/
-├── core/
-│   ├── ErrorHandler.ts         # Error management
-│   ├── DataManager.ts          # Data persistence
-│   └── PerformanceMonitor.ts   # Performance tracking
-├── learning/
-│   ├── SkillTreeManager.ts     # Learning content
-│   ├── LessonEngine.ts         # Lesson delivery
-│   └── ProgressTracker.ts      # Progress tracking
-└── user/
-    ├── ProfileSystem.ts        # User management
-    └── PortfolioManager.ts     # Artwork management
-
-src/types/index.ts              # TypeScript definitions
-package.json                    # Dependencies
-tsconfig.json                   # TypeScript config
-```
-
-### **📋 SUPPORTING FILES (Include if available)**
-```
-src/components/                 # UI components
-src/constants/                  # App constants
-src/utils/                      # Utility functions
-metro.config.js                 # Metro bundler config
-app.json                        # Expo configuration
+### **Music Manager Implementation**
+```typescript
+class MusicManager {
+  // Background music with seamless transitions
+  // Volume controls and fade effects
+  // Track recommendations based on activity
+  // Offline caching for core tracks
+}
 ```
 
 ---
 
-## 🚀 **HANDOFF MESSAGE FOR NEXT DEVELOPER**
+## 🎨 **DRAWING SYSTEM - PROCREATE LEVEL FEATURES**
 
-### **Mission Briefing**
-You're inheriting a **sophisticated, production-ready drawing app** with excellent architecture but **one critical import path issue** blocking launch. This is a **15-minute fix** followed by systematic validation.
+### **Core Features Needed**
+1. **Apple Pencil Integration**
+   - 4096 pressure levels
+   - Tilt detection for shading
+   - Palm rejection
+   - Haptic feedback
 
-### **Current Situation**
-- ✅ **EXCELLENT**: Professional React Native + Expo architecture
-- ✅ **EXCELLENT**: Comprehensive TypeScript types and interfaces  
-- ✅ **EXCELLENT**: Advanced context-based state management
-- ✅ **EXCELLENT**: Modular engine-based system design
-- ❌ **BLOCKING**: Import path errors preventing app bundle
+2. **Professional Brush Engine**
+   - 15+ brush types (pencil, ink, watercolor, airbrush)
+   - Custom brush creation
+   - Pressure curves and dynamics
+   - Texture support
 
-### **Your Mission (2-3 hours total)**
-1. **Fix Import Paths** (15 min) - Change `../../src/` to `../src/` in app files
-2. **Validate Navigation** (30 min) - Test all 5 tabs load
-3. **Test Contexts** (45 min) - Ensure data flows correctly
-4. **User Flow Testing** (60 min) - Complete onboarding → tabs → features
+3. **Layer System**
+   - Unlimited layers
+   - Blend modes (multiply, screen, overlay, etc.)
+   - Layer effects and transformations
+   - Group management
 
-### **Success Criteria**
-- ✅ App launches without bundle errors
-- ✅ All 5 tabs (Home/Draw/Learn/Gallery/Profile) load
-- ✅ Navigation works smoothly between tabs
-- ✅ No runtime errors in Metro console
-- ✅ Basic user flows functional
-
-### **Quality Standards to Maintain**
-This app has **Google-level architecture quality**:
-- **TypeScript Strict**: Maintain 100% type safety
-- **Performance**: Target 60fps drawing, <2s load times
-- **Modularity**: Engine-based system for scalability
-- **Error Handling**: Comprehensive error boundaries
-- **User Experience**: Professional polish throughout
-
-### **What Makes This Special**
-- **Advanced Drawing Engine**: Professional digital art tools
-- **Comprehensive Learning System**: Interactive lessons with skill trees
-- **Sophisticated State Management**: Multi-context architecture
-- **Production-Ready Code**: Scales to millions of users
-
-### **Next Phase After Fix**
-Once navigation works, you'll enhance:
-1. **Drawing Engine**: 60fps Apple Pencil integration
-2. **Learning Content**: Interactive lesson delivery
-3. **User System**: Progress tracking and achievements
-4. **Social Features**: Community and sharing
-
-### **Architecture Philosophy**
-- **Engine-based modularity** for enterprise scalability
-- **Context optimization** for React Native performance  
-- **TypeScript strict** for production reliability
-- **Professional UI standards** for market readiness
-
-### **Expected Timeline**
-- **Phase 1**: 15 min - Import fixes → App launches
-- **Phase 2**: 30 min - Navigation → All tabs work  
-- **Phase 3**: 45 min - Contexts → Data flows
-- **Phase 4**: 60 min - Features → User flows complete
-
-### **Resources Available**
-- **Complete TypeScript interfaces** for all data structures
-- **Sophisticated engine framework** for business logic
-- **Professional UI components** for consistent design
-- **Comprehensive error handling** for production stability
-
-### **Success Definition**
-**Complete when**: User can launch app → complete onboarding → navigate all tabs → access core features without crashes.
-
-**This is 95% complete professional software** - you're doing final integration testing and polish for production launch.
+4. **Performance Optimization**
+   - 60fps guaranteed drawing
+   - Memory efficient rendering
+   - Smooth zoom and pan
+   - Instant undo/redo
 
 ---
 
-## 🎯 **IMMEDIATE NEXT STEPS**
+## 📁 **FILES NEEDED FOR NEXT SESSION**
 
-### **For Current Session**
-1. **Fix `app/index.tsx`** - Change import paths
-2. **Test bundle** - Run `npx expo start --clear`  
-3. **Validate tabs** - Ensure all 5 tabs load
+### **🚨 ENGINE INITIALIZATION (Must Fix First)**
+```
+src/engines/learning/
+├── SkillTreeManager.ts        # Add singleton pattern + initialize()
+├── LessonEngine.ts           # Add singleton pattern + initialize()
+└── index.ts                  # Export all engine singletons
 
-### **For Next Developer**
-1. **Include ALL files listed above** in next chat
-2. **Provide Metro console output** if any errors remain
-3. **Test each tab individually** for specific issues
-4. **Focus on systematic validation** not feature development
+src/engines/drawing/
+├── BrushEngine.ts            # Complete initialization method
+├── ProfessionalCanvas.ts     # Add Apple Pencil integration
+└── index.ts                  # Export drawing singletons
+
+src/engines/core/
+├── DataManager.ts            # Add lesson/skill tree data methods
+└── index.ts                  # Export core singletons
+```
+
+### **🎵 MUSIC SYSTEM (New Implementation)**
+```
+src/engines/audio/            # NEW DIRECTORY
+├── MusicManager.ts           # Background music system
+├── TrackLibrary.ts           # Music track database
+├── AudioEngine.ts            # Expo AV integration
+└── index.ts                  # Audio system exports
+
+src/content/music/            # NEW DIRECTORY
+├── tracks.ts                 # Track metadata and URLs
+├── playlists.ts              # Page-specific playlists
+└── index.ts                  # Music content exports
+```
+
+### **🎨 DRAWING ENHANCEMENT (Priority Implementation)**
+```
+src/engines/drawing/
+├── ApplePencilHandler.ts     # NEW - Pressure/tilt detection
+├── LayerManager.ts           # NEW - Professional layer system  
+├── BrushLibrary.ts           # NEW - Professional brush collection
+└── PerformanceOptimizer.ts   # ENHANCE - 60fps guarantees
+```
 
 ---
 
-## 📞 **TECHNICAL HANDOFF SUMMARY**
+## 🚀 **NEXT SESSION EXECUTION PLAN**
 
-**Architecture Grade**: A+ (Professional, scalable, production-ready)  
-**Current Blocker**: Import path corrections (15-minute fix)  
-**Completion Level**: 95% - Just needs integration validation  
-**Next Milestone**: All tabs working → Feature enhancement phase  
-**Quality Standard**: Maintained Google-level code and UX standards
+### **Phase 2A: Engine Bootstrap (30 min)**
+1. **Fix SkillTreeManager singleton** - Add proper initialize() method
+2. **Fix LessonEngine singleton** - Add content loading
+3. **Fix DataManager** - Add lesson data persistence
+4. **Test initialization** - Verify learning tab loads
 
-**This is exceptional foundation work** - the next developer inherits a sophisticated, professional drawing app that just needs final integration testing. 🚀
+### **Phase 2B: Music System (20 min)**
+1. **Install Expo AV** - `expo install expo-av`
+2. **Create MusicManager** - Background audio system
+3. **Add track library** - Focus/creative/learning playlists
+4. **Integrate page-specific music** - Auto-play on tab switch
+
+### **Phase 2C: Drawing System Enhancement (45 min)**
+1. **Apple Pencil integration** - Pressure sensitivity
+2. **Professional brush engine** - 10+ brush types
+3. **Layer system** - Basic layer management
+4. **Performance optimization** - 60fps drawing
+
+### **Phase 2D: Content Integration (15 min)**
+1. **Add lesson content** - 5 complete lessons with practice
+2. **Test user flows** - Onboarding → Learning → Drawing
+3. **Verify music system** - Page transitions with audio
+4. **Performance validation** - 60fps + smooth audio
+
+---
+
+## 📊 **SUCCESS METRICS FOR NEXT SESSION**
+
+### **Engine Initialization**
+- ✅ Learning tab loads without "Loading learning content..."
+- ✅ Drawing tab loads without "Initializing canvas..."
+- ✅ All engine singletons properly exported and initialized
+
+### **Music System**
+- ✅ Background music plays automatically
+- ✅ Smooth transitions between pages
+- ✅ User can control volume and track selection
+- ✅ No audio conflicts or memory leaks
+
+### **Drawing Enhancement**
+- ✅ Apple Pencil pressure sensitivity working
+- ✅ Smooth 60fps drawing performance
+- ✅ Basic layer system functional
+- ✅ Professional brush feel and responsiveness
+
+### **User Experience**
+- ✅ Complete user flow: Onboarding → Learn → Draw → Gallery
+- ✅ No loading screens or initialization hangs
+- ✅ Professional app feel with music and smooth interactions
+
+---
+
+## 🎯 **COMPLETION CRITERIA**
+
+**Phase 2 Complete When**:
+1. ✅ All tabs load instantly without hanging
+2. ✅ Background music enhances user experience
+3. ✅ Drawing feels as responsive as Procreate
+4. ✅ Learning system delivers interactive lessons
+5. ✅ Performance maintains 60fps throughout
+
+**Ready for Phase 3**: Advanced features, content creation, and production polish.
+
+---
+
+## 💡 **TECHNICAL ARCHITECTURE NOTES**
+
+### **Engine Singleton Pattern**
+```typescript
+// Required Pattern for All Engines:
+export class EngineClass {
+  private static instance: EngineClass;
+  
+  public static getInstance(): EngineClass {
+    if (!EngineClass.instance) {
+      EngineClass.instance = new EngineClass();
+    }
+    return EngineClass.instance;
+  }
+  
+  public async initialize(): Promise<void> {
+    // Engine-specific initialization
+  }
+}
+
+export const engineInstance = EngineClass.getInstance();
+```
+
+### **Music System Integration**
+```typescript
+// MusicManager will be context-based:
+const MusicContext = createContext<MusicContextType>();
+
+// Auto-play on navigation:
+useEffect(() => {
+  musicManager.playForPage(currentPage);
+}, [currentPage]);
+```
+
+### **Drawing Performance Targets**
+- **Input Latency**: <16ms from Apple Pencil to screen
+- **Frame Rate**: Locked 60fps during drawing
+- **Memory Usage**: <100MB for complex artworks
+- **Battery Impact**: <10% per hour of drawing
+
+---
+
+## 🔄 **PHASE PROGRESSION**
+
+- ✅ **Phase 1**: TypeScript + Navigation (COMPLETE)
+- 🔄 **Phase 2**: Engine Initialization + Music + Drawing (CURRENT)
+- 🚫 **Phase 3**: Content + Social + Advanced Features
+- 🚫 **Phase 4**: Performance + Polish + Production Ready
+
+**Next Session Goal**: Complete Phase 2 and move to Phase 3 with full engine functionality and music system operational.
