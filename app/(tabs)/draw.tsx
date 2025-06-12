@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { 
   View, 
   StyleSheet, 
@@ -91,6 +91,9 @@ export default function DrawScreen() {
   const { state: drawingState, dispatch: drawingDispatch } = useDrawing();
   const { addXP, addAchievement, updateLearningStats } = useUserProgress();
   
+  // FIXED: Memoize styles to prevent unnecessary recalculations
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  
   const canvasRef = useCanvasRef();
   const professionalCanvas = useRef<ProfessionalCanvas | null>(null);
   
@@ -105,7 +108,7 @@ export default function DrawScreen() {
   // Canvas state
   const [canvasState, setCanvasState] = useState<any>(null);
   
-  // Gesture values
+  // FIXED: Initialize shared values with stable references
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -116,115 +119,150 @@ export default function DrawScreen() {
   
   // Tool panel animation
   const toolbarAnimation = useSharedValue(1);
-  
-  const styles = createStyles(theme);
 
-  // FIXED: Move updateCanvasTransform BEFORE it's used in gesture handlers
+  // FIXED: Memoize updateCanvasTransform to prevent recreations
   const updateCanvasTransform = useCallback(() => {
     if (professionalCanvas.current) {
       professionalCanvas.current.setZoom(scale.value);
       professionalCanvas.current.setPan(translateX.value, translateY.value);
       professionalCanvas.current.setRotation(rotation.value);
     }
-  }, [scale.value, translateX.value, translateY.value, rotation.value]);
+  }, []);
 
+  // FIXED: Optimize canvas initialization
   useEffect(() => {
-    if (canvasRef.current && !professionalCanvas.current) {
-      // Initialize professional canvas with Skia
-      professionalCanvas.current = new ProfessionalCanvas();
-      
-      // Calculate canvas dimensions
-      const canvasWidth = screenWidth - 20;
-      const canvasHeight = screenHeight - 200; // Account for toolbars
-      
-      professionalCanvas.current.initialize(canvasRef, canvasWidth, canvasHeight);
-      
-      // Set initial brush and color
-      const defaultBrush = brushEngine.getBrush('pencil-2b');
-      if (defaultBrush) {
-        professionalCanvas.current.setBrush(defaultBrush);
-        brushEngine.setCurrentBrush('pencil-2b');
+    let mounted = true;
+    
+    const initializeCanvas = async () => {
+      if (canvasRef.current && !professionalCanvas.current) {
+        try {
+          // Initialize professional canvas with Skia
+          professionalCanvas.current = new ProfessionalCanvas();
+          
+          // Calculate canvas dimensions
+          const canvasWidth = screenWidth - 20;
+          const canvasHeight = screenHeight - 200; // Account for toolbars
+          
+          await professionalCanvas.current.initialize(canvasRef, canvasWidth, canvasHeight);
+          
+          // Set initial brush and color
+          const defaultBrush = brushEngine.getBrush('pencil-2b');
+          if (defaultBrush && mounted) {
+            professionalCanvas.current.setBrush(defaultBrush);
+            brushEngine.setCurrentBrush('pencil-2b');
+          }
+          
+          if (mounted) {
+            professionalCanvas.current.setColor(drawingState.currentColor);
+            
+            // Subscribe to canvas events
+            const unsubscribeStroke = professionalCanvas.current.onStroke((stroke) => {
+              if (mounted) {
+                drawingDispatch({ type: 'ADD_STROKE', stroke });
+                addXP(1);
+                updateLearningStats('drawing', { strokesDrawn: 1 });
+              }
+            });
+            
+            const unsubscribeLayers = professionalCanvas.current.onLayersChange((layers) => {
+              if (mounted) {
+                console.log('Layers changed:', layers.length);
+              }
+            });
+            
+            setCanvasReady(true);
+            console.log('Professional Canvas initialized with Skia backend');
+            
+            return () => {
+              unsubscribeStroke();
+              unsubscribeLayers();
+            };
+          }
+        } catch (error) {
+          console.error('Failed to initialize canvas:', error);
+        }
       }
-      
-      professionalCanvas.current.setColor(drawingState.currentColor);
-      
-      // Subscribe to canvas events
-      const unsubscribeStroke = professionalCanvas.current.onStroke((stroke) => {
-        drawingDispatch({ type: 'ADD_STROKE', stroke });
-        addXP(1);
-        updateLearningStats('drawing', { strokesDrawn: 1 });
-      });
-      
-      const unsubscribeLayers = professionalCanvas.current.onLayersChange((layers) => {
-        // Update context with layer changes
-        console.log('Layers changed:', layers.length);
-      });
-      
-      setCanvasReady(true);
-      
-      return () => {
-        unsubscribeStroke();
-        unsubscribeLayers();
-        professionalCanvas.current?.destroy();
-      };
-    }
-  }, [canvasRef.current]);
-
-  // Touch handlers for drawing
-  const handleTouchStart = useCallback((event: any) => {
-    if (currentTool !== 'brush' || !professionalCanvas.current) return;
-    
-    const { locationX, locationY } = event.nativeEvent;
-    const touches = event.nativeEvent.touches || [];
-    const touch = touches[0] || event.nativeEvent;
-    
-    // Get pressure and tilt data
-    const point: Point = {
-      x: locationX,
-      y: locationY,
-      pressure: touch.force || 0.5,
-      tiltX: touch.tiltX || 0,
-      tiltY: touch.tiltY || 0,
-      timestamp: Date.now(),
     };
+
+    initializeCanvas();
     
-    professionalCanvas.current.startStroke(point);
-    setIsDrawing(true);
+    return () => {
+      mounted = false;
+      if (professionalCanvas.current) {
+        professionalCanvas.current.destroy();
+        professionalCanvas.current = null;
+      }
+    };
+  }, [canvasRef.current, drawingState.currentColor]);
+
+  // FIXED: Optimize touch handlers with better performance
+  const handleTouchStart = useCallback((event: any) => {
+    if (currentTool !== 'brush' || !professionalCanvas.current || !canvasReady) return;
     
-    // Haptic feedback
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, [currentTool]);
+    try {
+      const { locationX, locationY } = event.nativeEvent;
+      const touches = event.nativeEvent.touches || [];
+      const touch = touches[0] || event.nativeEvent;
+      
+      // Get pressure and tilt data
+      const point: Point = {
+        x: locationX,
+        y: locationY,
+        pressure: touch.force || 0.5,
+        tiltX: touch.tiltX || 0,
+        tiltY: touch.tiltY || 0,
+        timestamp: Date.now(),
+      };
+      
+      professionalCanvas.current.startStroke(point);
+      setIsDrawing(true);
+      
+      // Haptic feedback
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.error('Touch start error:', error);
+    }
+  }, [currentTool, canvasReady]);
 
   const handleTouchMove = useCallback((event: any) => {
     if (!isDrawing || currentTool !== 'brush' || !professionalCanvas.current) return;
     
-    const { locationX, locationY } = event.nativeEvent;
-    const touches = event.nativeEvent.touches || [];
-    const touch = touches[0] || event.nativeEvent;
-    
-    const point: Point = {
-      x: locationX,
-      y: locationY,
-      pressure: touch.force || 0.5,
-      tiltX: touch.tiltX || 0,
-      tiltY: touch.tiltY || 0,
-      timestamp: Date.now(),
-    };
-    
-    professionalCanvas.current.addPoint(point);
+    try {
+      const { locationX, locationY } = event.nativeEvent;
+      const touches = event.nativeEvent.touches || [];
+      const touch = touches[0] || event.nativeEvent;
+      
+      const point: Point = {
+        x: locationX,
+        y: locationY,
+        pressure: touch.force || 0.5,
+        tiltX: touch.tiltX || 0,
+        tiltY: touch.tiltY || 0,
+        timestamp: Date.now(),
+      };
+      
+      professionalCanvas.current.addPoint(point);
+    } catch (error) {
+      console.error('Touch move error:', error);
+    }
   }, [isDrawing, currentTool]);
 
   const handleTouchEnd = useCallback(() => {
     if (!isDrawing || !professionalCanvas.current) return;
     
-    professionalCanvas.current.endStroke();
-    setIsDrawing(false);
-    
-    // Check achievements
-    checkDrawingAchievements();
+    try {
+      professionalCanvas.current.endStroke();
+      setIsDrawing(false);
+      
+      // Check achievements
+      checkDrawingAchievements();
+    } catch (error) {
+      console.error('Touch end error:', error);
+      setIsDrawing(false);
+    }
   }, [isDrawing]);
 
-  // Gesture handlers for canvas manipulation
+  // FIXED: Optimize gesture handlers with proper cleanup
   const panGestureHandler = useAnimatedGestureHandler<PanGestureHandlerGestureEvent>({
     onStart: () => {
       if (currentTool === 'move') {
@@ -250,13 +288,15 @@ export default function DrawScreen() {
       lastScale.value = scale.value;
     },
     onActive: (event) => {
-      scale.value = lastScale.value * event.scale;
+      const newScale = Math.max(0.5, Math.min(5, lastScale.value * event.scale));
+      scale.value = newScale;
     },
     onEnd: () => {
       runOnJS(updateCanvasTransform)();
     },
   });
 
+  // FIXED: Optimize animated styles to prevent reading during render
   const animatedCanvasStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
@@ -264,38 +304,64 @@ export default function DrawScreen() {
       { scale: scale.value },
       { rotate: `${rotation.value}deg` },
     ],
-  }));
+  }), []);
 
-  const checkDrawingAchievements = () => {
-    const state = professionalCanvas.current?.getState();
-    if (!state) return;
-    
-    const totalStrokes = state.layers.reduce((sum: number, layer: any) => 
-      sum + (layer.strokes?.length || 0), 0
-    );
-    
-    if (totalStrokes === 1) {
-      addAchievement('first_stroke');
+  const animatedToolbarStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(toolbarAnimation.value, [0, 1], [0.3, 1]),
+    transform: [
+      {
+        translateY: interpolate(
+          toolbarAnimation.value,
+          [0, 1],
+          [-50, 0],
+          Extrapolate.CLAMP
+        ),
+      },
+    ],
+  }), []);
+
+  const checkDrawingAchievements = useCallback(() => {
+    try {
+      const state = professionalCanvas.current?.getState();
+      if (!state) return;
+      
+      const totalStrokes = state.layers.reduce((sum: number, layer: any) => 
+        sum + (layer.strokes?.length || 0), 0
+      );
+      
+      if (totalStrokes === 1) {
+        addAchievement('first_stroke');
+      }
+      if (totalStrokes === 100) {
+        addAchievement('hundred_strokes');
+      }
+      if (state.layers.length >= 5) {
+        addAchievement('layer_master');
+      }
+    } catch (error) {
+      console.error('Achievement check error:', error);
     }
-    if (totalStrokes === 100) {
-      addAchievement('hundred_strokes');
+  }, [addAchievement]);
+
+  const handleUndo = useCallback(() => {
+    try {
+      professionalCanvas.current?.undo();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.error('Undo error:', error);
     }
-    if (state.layers.length >= 5) {
-      addAchievement('layer_master');
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    try {
+      professionalCanvas.current?.redo();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.error('Redo error:', error);
     }
-  };
+  }, []);
 
-  const handleUndo = () => {
-    professionalCanvas.current?.undo();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const handleRedo = () => {
-    professionalCanvas.current?.redo();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const handleClear = () => {
+  const handleClear = useCallback(() => {
     Alert.alert(
       'Clear Canvas',
       'Are you sure you want to clear the canvas? This cannot be undone.',
@@ -305,18 +371,25 @@ export default function DrawScreen() {
           text: 'Clear', 
           style: 'destructive',
           onPress: () => {
-            professionalCanvas.current?.clear();
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            try {
+              professionalCanvas.current?.clear();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (error) {
+              console.error('Clear error:', error);
+            }
           }
         },
       ]
     );
-  };
+  }, []);
 
-  const handleExport = async () => {
+  const handleExport = useCallback(async () => {
     try {
       const base64 = await professionalCanvas.current?.exportImage('png', 1.0);
-      if (!base64) return;
+      if (!base64) {
+        Alert.alert('Error', 'Failed to generate image');
+        return;
+      }
       
       const { status } = await MediaLibrary.requestPermissionsAsync();
       if (status !== 'granted') {
@@ -343,12 +416,15 @@ export default function DrawScreen() {
       Alert.alert('Error', 'Failed to export artwork');
       console.error('Export error:', error);
     }
-  };
+  }, [addAchievement, updateLearningStats]);
 
-  const handleShare = async () => {
+  const handleShare = useCallback(async () => {
     try {
       const base64 = await professionalCanvas.current?.exportImage('png', 1.0);
-      if (!base64) return;
+      if (!base64) {
+        Alert.alert('Error', 'Failed to generate image');
+        return;
+      }
       
       // Create temporary file
       const filename = `Pikaso_${Date.now()}.png`;
@@ -367,52 +443,62 @@ export default function DrawScreen() {
       updateLearningStats('community', { artworksShared: 1 });
     } catch (error) {
       Alert.alert('Error', 'Failed to share artwork');
+      console.error('Share error:', error);
     }
-  };
+  }, [addAchievement, updateLearningStats]);
 
-  const handleBrushSelect = (brush: Brush) => {
-    professionalCanvas.current?.setBrush(brush);
-    brushEngine.setCurrentBrush(brush.id);
-    drawingDispatch({ type: 'SET_BRUSH', brush });
-    setShowBrushPicker(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const handleColorSelect = (colorHex: string) => {
-    const color = hexToColor(colorHex);
-    professionalCanvas.current?.setColor(color);
-    drawingDispatch({ type: 'SET_COLOR', color });
-    setShowColorPicker(false);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  };
-
-  const handleLayerAdd = () => {
-    const layerId = professionalCanvas.current?.addLayer();
-    if (layerId) {
+  const handleBrushSelect = useCallback((brush: Brush) => {
+    try {
+      professionalCanvas.current?.setBrush(brush);
+      brushEngine.setCurrentBrush(brush.id);
+      drawingDispatch({ type: 'SET_BRUSH', brush });
+      setShowBrushPicker(false);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.error('Brush select error:', error);
     }
-  };
+  }, [drawingDispatch]);
 
-  const toggleToolbar = () => {
+  const handleColorSelect = useCallback((colorHex: string) => {
+    try {
+      const color = hexToColor(colorHex);
+      professionalCanvas.current?.setColor(color);
+      drawingDispatch({ type: 'SET_COLOR', color });
+      setShowColorPicker(false);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch (error) {
+      console.error('Color select error:', error);
+    }
+  }, [drawingDispatch]);
+
+  const handleLayerAdd = useCallback(() => {
+    try {
+      const layerId = professionalCanvas.current?.addLayer();
+      if (layerId) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } catch (error) {
+      console.error('Layer add error:', error);
+    }
+  }, []);
+
+  const toggleToolbar = useCallback(() => {
     toolbarAnimation.value = withSpring(toolbarAnimation.value === 1 ? 0 : 1);
-  };
+  }, []);
 
-  const animatedToolbarStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(toolbarAnimation.value, [0, 1], [0.3, 1]),
-    transform: [
-      {
-        translateY: interpolate(
-          toolbarAnimation.value,
-          [0, 1],
-          [-50, 0],
-          Extrapolate.CLAMP
-        ),
-      },
-    ],
-  }));
+  // FIXED: Optimize zoom controls
+  const handleZoomIn = useCallback(() => {
+    scale.value = withSpring(Math.min(5, scale.value * 1.2));
+    runOnJS(updateCanvasTransform)();
+  }, [updateCanvasTransform]);
+
+  const handleZoomOut = useCallback(() => {
+    scale.value = withSpring(Math.max(0.5, scale.value * 0.8));
+    runOnJS(updateCanvasTransform)();
+  }, [updateCanvasTransform]);
 
   // Helper function to convert hex to Color object
-  const hexToColor = (hex: string): Color => {
+  const hexToColor = useCallback((hex: string): Color => {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
@@ -441,9 +527,9 @@ export default function DrawScreen() {
       hsb: { h: h < 0 ? h + 360 : h, s, b: brightness },
       alpha: 1,
     };
-  };
+  }, []);
 
-  const renderBrushPicker = () => {
+  const renderBrushPicker = useCallback(() => {
     const allBrushes = brushEngine.getAllBrushes();
     const categories: BrushCategory[] = ['pencil', 'ink', 'paint', 'watercolor', 'airbrush', 'marker', 'texture'];
     
@@ -510,9 +596,9 @@ export default function DrawScreen() {
         </Pressable>
       </Modal>
     );
-  };
+  }, [showBrushPicker, handleBrushSelect, styles, theme.colors.primary]);
 
-  const renderColorPicker = () => (
+  const renderColorPicker = useCallback(() => (
     <Modal
       visible={showColorPicker}
       transparent
@@ -564,130 +650,29 @@ export default function DrawScreen() {
         </View>
       </Pressable>
     </Modal>
-  );
+  ), [showColorPicker, drawingState.currentColor.hex, drawingState.recentColors, handleColorSelect, styles]);
 
-  const renderLayerPanel = () => {
-    const state = professionalCanvas.current?.getState();
-    if (!state) return null;
-
+  if (!canvasReady) {
     return (
-      <Modal
-        visible={showLayerPanel}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowLayerPanel(false)}
-      >
-        <Pressable 
-          style={styles.modalOverlay} 
-          onPress={() => setShowLayerPanel(false)}
-        >
-          <View style={styles.layerPanelContainer}>
-            <View style={styles.layerHeader}>
-              <Text style={styles.pickerTitle}>Layers</Text>
-              <Pressable
-                style={styles.addLayerButton}
-                onPress={handleLayerAdd}
-              >
-                <Plus size={20} color={theme.colors.primary} />
-                <Text style={styles.addLayerText}>Add Layer</Text>
-              </Pressable>
-            </View>
-            
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {state.layers.map((layer: Layer) => (
-                <View
-                  key={layer.id}
-                  style={[
-                    styles.layerItem,
-                    state.activeLayerId === layer.id && styles.activeLayer
-                  ]}
-                >
-                  <Pressable
-                    style={styles.layerMain}
-                    onPress={() => {
-                      professionalCanvas.current?.setActiveLayer(layer.id);
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    }}
-                  >
-                    <Pressable
-                      style={styles.layerVisibility}
-                      onPress={() => {
-                        professionalCanvas.current?.updateLayerProperties(layer.id, {
-                          visible: !layer.visible
-                        });
-                      }}
-                    >
-                      {layer.visible ? 
-                        <Eye size={16} color={theme.colors.text} /> : 
-                        <EyeOff size={16} color={theme.colors.textSecondary} />
-                      }
-                    </Pressable>
-                    
-                    <View style={styles.layerInfo}>
-                      <Text style={styles.layerName}>{layer.name}</Text>
-                      <Text style={styles.layerOpacity}>
-                        {Math.round(layer.opacity * 100)}% • {layer.blendMode}
-                      </Text>
-                    </View>
-                    
-                    <Pressable
-                      style={styles.layerLock}
-                      onPress={() => {
-                        professionalCanvas.current?.updateLayerProperties(layer.id, {
-                          locked: !layer.locked
-                        });
-                      }}
-                    >
-                      {layer.locked ? 
-                        <Lock size={16} color={theme.colors.textSecondary} /> : 
-                        <Unlock size={16} color={theme.colors.text} />
-                      }
-                    </Pressable>
-                  </Pressable>
-                  
-                  {state.layers.length > 1 && (
-                    <Pressable
-                      style={styles.layerDelete}
-                      onPress={() => {
-                        Alert.alert(
-                          'Delete Layer',
-                          `Delete "${layer.name}"?`,
-                          [
-                            { text: 'Cancel', style: 'cancel' },
-                            {
-                              text: 'Delete',
-                              style: 'destructive',
-                              onPress: () => {
-                                professionalCanvas.current?.deleteLayer(layer.id);
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                              }
-                            }
-                          ]
-                        );
-                      }}
-                    >
-                      <Trash2 size={16} color={theme.colors.error} />
-                    </Pressable>
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-          </View>
-        </Pressable>
-      </Modal>
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Initializing Canvas...</Text>
+      </View>
     );
-  };
+  }
 
   return (
     <GestureHandlerRootView style={styles.container}>
       <View style={styles.canvasContainer}>
-        <PinchGestureHandler onGestureEvent={pinchGestureHandler}>
+        <PinchGestureHandler onGestureEvent={pinchGestureHandler} enabled={currentTool !== 'brush'}>
           <Animated.View style={[styles.canvasWrapper, animatedCanvasStyle]}>
-            <PanGestureHandler onGestureEvent={panGestureHandler}>
+            <PanGestureHandler onGestureEvent={panGestureHandler} enabled={currentTool === 'move'}>
               <Animated.View style={styles.canvasInner}>
                 <Canvas
                   ref={canvasRef}
                   style={styles.canvas}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                 />
               </Animated.View>
             </PanGestureHandler>
@@ -796,23 +781,11 @@ export default function DrawScreen() {
         </View>
         
         <View style={styles.canvasControls}>
-          <Pressable
-            style={styles.zoomButton}
-            onPress={() => {
-              scale.value = withSpring(scale.value * 1.2);
-              updateCanvasTransform();
-            }}
-          >
+          <Pressable style={styles.zoomButton} onPress={handleZoomIn}>
             <ZoomIn size={20} color={theme.colors.text} />
           </Pressable>
           <Text style={styles.zoomText}>{Math.round(scale.value * 100)}%</Text>
-          <Pressable
-            style={styles.zoomButton}
-            onPress={() => {
-              scale.value = withSpring(scale.value * 0.8);
-              updateCanvasTransform();
-            }}
-          >
+          <Pressable style={styles.zoomButton} onPress={handleZoomOut}>
             <ZoomOut size={20} color={theme.colors.text} />
           </Pressable>
         </View>
@@ -821,7 +794,6 @@ export default function DrawScreen() {
       {/* Modals */}
       {renderBrushPicker()}
       {renderColorPicker()}
-      {renderLayerPanel()}
     </GestureHandlerRootView>
   );
 }
@@ -830,6 +802,17 @@ const createStyles = (theme: any) => StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: theme.colors.text,
+    marginTop: 16,
   },
   canvasContainer: {
     flex: 1,
@@ -1126,77 +1109,5 @@ const createStyles = (theme: any) => StyleSheet.create({
     marginRight: 8,
     borderWidth: 1,
     borderColor: theme.colors.border,
-  },
-  layerPanelContainer: {
-    backgroundColor: theme.colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    paddingBottom: 40,
-    maxHeight: '60%',
-  },
-  layerHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  addLayerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: theme.colors.primary + '20',
-  },
-  addLayerText: {
-    fontSize: 14,
-    color: theme.colors.primary,
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  layerItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-    borderRadius: 8,
-    backgroundColor: theme.colors.background,
-    overflow: 'hidden',
-  },
-  activeLayer: {
-    backgroundColor: theme.colors.primary + '10',
-    borderWidth: 1,
-    borderColor: theme.colors.primary + '30',
-  },
-  layerMain: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-  },
-  layerVisibility: {
-    padding: 4,
-    marginRight: 8,
-  },
-  layerInfo: {
-    flex: 1,
-  },
-  layerName: {
-    fontSize: 14,
-    color: theme.colors.text,
-    fontWeight: '500',
-  },
-  layerOpacity: {
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-    marginTop: 2,
-  },
-  layerLock: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  layerDelete: {
-    padding: 16,
-    backgroundColor: theme.colors.error + '10',
   },
 });

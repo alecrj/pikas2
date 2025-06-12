@@ -195,7 +195,8 @@ export class ProfileSystem {
     await this.saveUser();
   }
 
-  public async addXP(amount: number, source: string): Promise<void> {
+  // FIXED: Updated addXP method signature to match expected usage
+  public async addXP(amount: number, source: string = 'general'): Promise<void> {
     if (!this.currentUser || amount <= 0) return;
     
     try {
@@ -230,6 +231,73 @@ export class ProfileSystem {
         errorHandler.createError('XP_ADD_ERROR', 'Failed to add XP', 'low', error)
       );
     }
+  }
+
+  // FIXED: Added missing incrementStat method
+  public async incrementStat(statName: keyof User['stats'], amount: number = 1): Promise<void> {
+    if (!this.currentUser) return;
+    
+    try {
+      // Type-safe stat incrementation
+      const currentValue = this.currentUser.stats[statName] as number;
+      (this.currentUser.stats as any)[statName] = currentValue + amount;
+      
+      await this.saveUser();
+      
+      this.eventBus.emit('user:statUpdated', {
+        statName,
+        oldValue: currentValue,
+        newValue: currentValue + amount,
+      });
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('STAT_INCREMENT_ERROR', 'Failed to increment stat', 'low', error)
+      );
+    }
+  }
+
+  // FIXED: Added missing updateStreak method
+  public async updateStreak(): Promise<void> {
+    if (!this.currentUser) return;
+    
+    try {
+      await this.updateActivity();
+      
+      // The actual streak logic is handled in updateActivity()
+      // This method is a convenience wrapper
+      
+      this.eventBus.emit('user:streakUpdated', {
+        currentStreak: this.currentUser.stats.currentStreak,
+        longestStreak: this.currentUser.stats.longestStreak,
+      });
+    } catch (error) {
+      errorHandler.handleError(
+        errorHandler.createError('STREAK_UPDATE_ERROR', 'Failed to update streak', 'low', error)
+      );
+    }
+  }
+
+  // FIXED: Added missing getProgressSummary method
+  public getProgressSummary(): {
+    level: number;
+    totalXP: number;
+    xpToNextLevel: number;
+    streakDays: number;
+    achievementsCount: number;
+    lessonsCompleted: number;
+    artworksCreated: number;
+  } | null {
+    if (!this.currentUser) return null;
+    
+    return {
+      level: this.currentUser.level,
+      totalXP: this.currentUser.totalXP,
+      xpToNextLevel: this.getXPToNextLevel(),
+      streakDays: this.currentUser.streakDays,
+      achievementsCount: this.currentUser.achievements.length,
+      lessonsCompleted: this.currentUser.stats.totalLessonsCompleted,
+      artworksCreated: this.currentUser.stats.artworksCreated,
+    };
   }
 
   public async recordAchievement(achievementId: string): Promise<void> {

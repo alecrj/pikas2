@@ -210,11 +210,8 @@ export class ProgressTracker {
       // Update daily progress
       this.learningProgress.dailyProgress += xpReward;
       
-      // Update user profile with XP
-      const user = profileSystem.getCurrentUser();
-      if (user) {
-        await profileSystem.addXP(xpReward);
-      }
+      // FIXED: Added source parameter to addXP call
+      await profileSystem.addXP(xpReward, `lesson:${lessonId}`);
       
       await this.saveProgress();
       this.analyzeProgress();

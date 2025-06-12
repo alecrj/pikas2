@@ -1,5 +1,6 @@
-// src/types/index.ts
+// src/types/index.ts - FIXED VERSION with missing exports
 import { SkPath, SkImage } from '@shopify/react-native-skia';
+import { ReactNode } from 'react';
 
 // ========================== CORE TYPES ==========================
 
@@ -17,6 +18,21 @@ export interface Color {
   rgb: { r: number; g: number; b: number };
   hsb: { h: number; s: number; b: number };
   alpha: number;
+}
+
+// ========================== ERROR BOUNDARY TYPES - FIXED ==========================
+
+export interface ErrorBoundaryProps {
+  children: ReactNode;
+  fallback?: ReactNode;
+  onError?: (error: Error, errorInfo: any) => void;
+}
+
+export interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+  errorInfo: any;
+  errorId?: string;
 }
 
 // ========================== DRAWING TYPES ==========================
@@ -906,6 +922,7 @@ export interface LearningContextType {
   validateStep: (stepIndex: number, userInput: any) => Promise<boolean>;
 
   getLesson: (lessonId: string) => Lesson | null;
+  getLessonProgress: (lessonId: string) => number; // FIXED: Added missing method
   getNextLesson: () => Lesson | null;
   checkUnlockRequirements: (lessonId: string) => boolean;
 }

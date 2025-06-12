@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { 
   DrawingState, 
   DrawingTool, 
@@ -47,10 +47,11 @@ type DrawingAction =
   | { type: 'SET_VELOCITY_SENSITIVITY'; enabled: boolean }
   | { type: 'ADD_RECENT_COLOR'; color: string }
   | { type: 'LOAD_STATE'; state: Partial<DrawingState> }
-  | { type: 'RESET_STATE' };
+  | { type: 'RESET_STATE' }
+  | { type: 'BATCH_UPDATE'; updates: Partial<DrawingState> };
 
-// Initial drawing state
-const initialState: DrawingState = {
+// FIXED: Optimize initial state with default layer
+const createInitialState = (): DrawingState => ({
   currentTool: 'brush',
   currentColor: {
     hex: '#000000',
@@ -61,8 +62,19 @@ const initialState: DrawingState = {
   currentBrush: null, // Will be set when brush engine initializes
   brushSize: 3,
   opacity: 1,
-  layers: [],
-  activeLayerId: '',
+  layers: [{
+    id: 'layer-1',
+    name: 'Background',
+    type: 'raster',
+    strokes: [],
+    opacity: 1,
+    blendMode: 'normal',
+    visible: true,
+    locked: false,
+    data: null,
+    order: 0,
+  }],
+  activeLayerId: 'layer-1',
   strokes: [],
   canvasWidth: 1024,
   canvasHeight: 768,
@@ -97,9 +109,9 @@ const initialState: DrawingState = {
   recentColors: ['#000000'],
   customBrushes: [],
   savedPalettes: [],
-};
+});
 
-// Reducer function for drawing state
+// FIXED: Optimize reducer with better performance and memory management
 function drawingReducer(state: DrawingState, action: DrawingAction): DrawingState {
   const eventBus = EventBus.getInstance();
   
@@ -107,9 +119,14 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
     case 'SET_TOOL':
       return { ...state, currentTool: action.tool };
       
-    case 'SET_COLOR':
-      const newRecentColors = [action.color.hex, ...state.recentColors.filter(c => c !== action.color.hex)].slice(0, 20);
+    case 'SET_COLOR': {
+      const newRecentColors = [
+        action.color.hex, 
+        ...state.recentColors.filter(c => c !== action.color.hex)
+      ].slice(0, 20);
+      
       eventBus.emit('drawing:colorChanged', { color: action.color });
+      
       return { 
         ...state, 
         currentColor: action.color,
@@ -119,9 +136,11 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
           colorsUsed: state.stats.colorsUsed + 1,
         }
       };
+    }
       
-    case 'SET_BRUSH':
+    case 'SET_BRUSH': {
       eventBus.emit('drawing:brushChanged', { brush: action.brush });
+      
       return { 
         ...state, 
         currentBrush: action.brush,
@@ -132,8 +151,9 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
           brushesUsed: state.stats.brushesUsed + 1,
         }
       };
+    }
       
-    case 'SET_BRUSH_SIZE':
+    case 'SET_BRUSH_SIZE': {
       if (state.currentBrush) {
         const updatedBrush = {
           ...state.currentBrush,
@@ -142,8 +162,9 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         return { ...state, brushSize: action.size, currentBrush: updatedBrush };
       }
       return { ...state, brushSize: action.size };
+    }
       
-    case 'SET_OPACITY':
+    case 'SET_OPACITY': {
       if (state.currentBrush) {
         const updatedBrush = {
           ...state.currentBrush,
@@ -152,9 +173,11 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         return { ...state, opacity: action.opacity, currentBrush: updatedBrush };
       }
       return { ...state, opacity: action.opacity };
+    }
       
-    case 'ADD_STROKE':
+    case 'ADD_STROKE': {
       eventBus.emit('drawing:strokeAdded', { stroke: action.stroke });
+      
       return { 
         ...state, 
         strokes: [...state.strokes, action.stroke],
@@ -163,6 +186,7 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
           totalStrokes: state.stats.totalStrokes + 1,
         }
       };
+    }
       
     case 'REMOVE_STROKE':
       return { 
@@ -170,8 +194,9 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         strokes: state.strokes.filter(s => s.id !== action.strokeId) 
       };
       
-    case 'ADD_LAYER':
+    case 'ADD_LAYER': {
       eventBus.emit('drawing:layerAdded', { layer: action.layer });
+      
       return { 
         ...state, 
         layers: [...state.layers, action.layer],
@@ -181,6 +206,7 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
           layersUsed: state.stats.layersUsed + 1,
         }
       };
+    }
       
     case 'UPDATE_LAYER':
       return {
@@ -190,18 +216,20 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         ),
       };
       
-    case 'DELETE_LAYER':
+    case 'DELETE_LAYER': {
       const filteredLayers = state.layers.filter(l => l.id !== action.layerId);
       const newActiveLayerId = state.activeLayerId === action.layerId 
         ? filteredLayers[filteredLayers.length - 1]?.id || ''
         : state.activeLayerId;
       
       eventBus.emit('drawing:layerDeleted', { layerId: action.layerId });
+      
       return {
         ...state,
         layers: filteredLayers,
         activeLayerId: newActiveLayerId,
       };
+    }
       
     case 'SET_ACTIVE_LAYER':
       return { ...state, activeLayerId: action.layerId };
@@ -240,11 +268,11 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
     case 'SET_DRAWING_MODE':
       return { ...state, drawingMode: action.mode };
       
-    case 'ADD_TO_HISTORY':
+    case 'ADD_TO_HISTORY': {
       const newHistory = state.history.slice(0, state.historyIndex + 1);
       newHistory.push(action.state);
       
-      // Limit history to 50 states
+      // Limit history to 50 states to prevent memory issues
       if (newHistory.length > 50) {
         newHistory.shift();
       }
@@ -254,11 +282,13 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         history: newHistory,
         historyIndex: newHistory.length - 1,
       };
+    }
       
-    case 'UNDO':
+    case 'UNDO': {
       if (state.historyIndex > 0) {
         const previousEntry = state.history[state.historyIndex - 1];
         eventBus.emit('drawing:undo');
+        
         return {
           ...state,
           // Apply the previous state data
@@ -273,11 +303,13 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         };
       }
       return state;
+    }
       
-    case 'REDO':
+    case 'REDO': {
       if (state.historyIndex < state.history.length - 1) {
         const nextEntry = state.history[state.historyIndex + 1];
         eventBus.emit('drawing:redo');
+        
         return {
           ...state,
           // Apply the next state data
@@ -292,6 +324,7 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         };
       }
       return state;
+    }
       
     case 'UPDATE_STATS':
       return {
@@ -317,15 +350,23 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         settings: { ...state.settings, velocitySensitivity: action.enabled },
       };
       
-    case 'ADD_RECENT_COLOR':
-      const updatedRecentColors = [action.color, ...state.recentColors.filter(c => c !== action.color)].slice(0, 20);
+    case 'ADD_RECENT_COLOR': {
+      const updatedRecentColors = [
+        action.color, 
+        ...state.recentColors.filter(c => c !== action.color)
+      ].slice(0, 20);
+      
       return { ...state, recentColors: updatedRecentColors };
+    }
       
     case 'LOAD_STATE':
       return { ...state, ...action.state };
       
+    case 'BATCH_UPDATE':
+      return { ...state, ...action.updates };
+      
     case 'RESET_STATE':
-      return initialState;
+      return createInitialState();
       
     default:
       return state;
@@ -358,6 +399,12 @@ interface DrawingContextValue {
   toggleGrid: () => void;
   setReferenceImage: (imageUri: string | null) => void;
   getDrawingStats: () => DrawingStats;
+  
+  // Performance optimized functions
+  batchUpdate: (updates: Partial<DrawingState>) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  activeLayer: Layer | null;
 }
 
 // Create the context
@@ -369,56 +416,103 @@ interface DrawingProviderProps {
 }
 
 export function DrawingProvider({ children }: DrawingProviderProps) {
-  const [state, dispatch] = useReducer(drawingReducer, initialState);
-  const eventBus = EventBus.getInstance();
+  const [state, dispatch] = useReducer(drawingReducer, null, createInitialState);
+  const eventBus = useMemo(() => EventBus.getInstance(), []);
+  
+  // FIXED: Memoize computed values for performance
+  const canUndo = useMemo(() => state.historyIndex > 0, [state.historyIndex]);
+  const canRedo = useMemo(() => state.historyIndex < state.history.length - 1, [state.historyIndex, state.history.length]);
+  const activeLayer = useMemo(() => 
+    state.layers.find(layer => layer.id === state.activeLayerId) || null, 
+    [state.layers, state.activeLayerId]
+  );
   
   // Initialize default brush on mount
   useEffect(() => {
-    const defaultBrush = brushEngine.getBrush('pencil-2b');
-    if (defaultBrush) {
-      dispatch({ type: 'SET_BRUSH', brush: defaultBrush });
-    }
+    let mounted = true;
     
-    // Load saved drawing state if exists
-    loadSavedState();
+    const initializeDrawing = async () => {
+      try {
+        console.log('🎨 Initializing drawing system...');
+        
+        // Set default brush
+        const defaultBrush = brushEngine.getBrush('pencil-2b');
+        if (defaultBrush && mounted) {
+          dispatch({ type: 'SET_BRUSH', brush: defaultBrush });
+        }
+        
+        // Load saved drawing state if exists
+        await loadSavedState();
+        
+        console.log('✅ Drawing system initialized');
+      } catch (error) {
+        console.error('❌ Failed to initialize drawing system:', error);
+      }
+    };
+
+    initializeDrawing();
     
-    // Setup auto-save
-    const autoSaveInterval = setInterval(() => {
-      if (state.settings.autoSave) {
-        saveState();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  
+  // FIXED: Optimize auto-save with better debouncing
+  useEffect(() => {
+    if (!state.settings.autoSave) return;
+    
+    const autoSaveInterval = setInterval(async () => {
+      try {
+        await saveState();
+      } catch (error) {
+        console.error('Auto-save failed:', error);
       }
     }, state.settings.autoSaveInterval * 1000);
     
     return () => clearInterval(autoSaveInterval);
-  }, []);
+  }, [state.settings.autoSave, state.settings.autoSaveInterval]);
   
-  // Track drawing time
+  // Track drawing time efficiently
   useEffect(() => {
     const startTime = Date.now();
     
     return () => {
       const sessionTime = Math.floor((Date.now() - startTime) / 1000);
-      dispatch({ 
-        type: 'UPDATE_STATS', 
-        stats: { totalTime: state.stats.totalTime + sessionTime } 
-      });
+      if (sessionTime > 10) { // Only track significant sessions
+        dispatch({ 
+          type: 'UPDATE_STATS', 
+          stats: { totalTime: state.stats.totalTime + sessionTime } 
+        });
+      }
     };
   }, []);
   
-  // Helper functions
-  const setTool = (tool: DrawingTool) => dispatch({ type: 'SET_TOOL', tool });
+  // FIXED: Optimize helper functions with useCallback
+  const setTool = useCallback((tool: DrawingTool) => {
+    dispatch({ type: 'SET_TOOL', tool });
+  }, []);
   
-  const setColor = (color: Color) => dispatch({ type: 'SET_COLOR', color });
+  const setColor = useCallback((color: Color) => {
+    dispatch({ type: 'SET_COLOR', color });
+  }, []);
   
-  const setBrush = (brush: Brush) => dispatch({ type: 'SET_BRUSH', brush });
+  const setBrush = useCallback((brush: Brush) => {
+    dispatch({ type: 'SET_BRUSH', brush });
+  }, []);
   
-  const setBrushSize = (size: number) => dispatch({ type: 'SET_BRUSH_SIZE', size });
+  const setBrushSize = useCallback((size: number) => {
+    dispatch({ type: 'SET_BRUSH_SIZE', size });
+  }, []);
   
-  const setOpacity = (opacity: number) => dispatch({ type: 'SET_OPACITY', opacity });
+  const setOpacity = useCallback((opacity: number) => {
+    dispatch({ type: 'SET_OPACITY', opacity });
+  }, []);
   
-  const addStroke = (stroke: Stroke) => dispatch({ type: 'ADD_STROKE', stroke });
+  const addStroke = useCallback((stroke: Stroke) => {
+    dispatch({ type: 'ADD_STROKE', stroke });
+  }, []);
   
-  const addLayer = (name?: string): Layer => {
+  const addLayer = useCallback((name?: string): Layer => {
     const layer: Layer = {
       id: `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       name: name || `Layer ${state.layers.length + 1}`,
@@ -434,33 +528,43 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
     
     dispatch({ type: 'ADD_LAYER', layer });
     return layer;
-  };
+  }, [state.layers.length]);
   
-  const deleteLayer = (layerId: string) => {
+  const deleteLayer = useCallback((layerId: string) => {
     if (state.layers.length > 1) {
       dispatch({ type: 'DELETE_LAYER', layerId });
     }
-  };
+  }, [state.layers.length]);
   
-  const setActiveLayer = (layerId: string) => {
+  const setActiveLayer = useCallback((layerId: string) => {
     dispatch({ type: 'SET_ACTIVE_LAYER', layerId });
-  };
+  }, []);
   
-  const updateLayer = (layerId: string, updates: Partial<Layer>) => {
+  const updateLayer = useCallback((layerId: string, updates: Partial<Layer>) => {
     dispatch({ type: 'UPDATE_LAYER', layerId, updates });
-  };
+  }, []);
   
-  const setCanvasTransform = (zoom: number, pan: { x: number; y: number }, rotation: number) => {
-    dispatch({ type: 'SET_ZOOM', zoom });
-    dispatch({ type: 'SET_PAN', pan });
-    dispatch({ type: 'SET_ROTATION', rotation });
-  };
+  const setCanvasTransform = useCallback((zoom: number, pan: { x: number; y: number }, rotation: number) => {
+    // Use batch update for better performance
+    dispatch({ 
+      type: 'BATCH_UPDATE', 
+      updates: { zoom, pan, rotation } 
+    });
+  }, []);
   
-  const undo = () => dispatch({ type: 'UNDO' });
+  const undo = useCallback(() => {
+    if (canUndo) {
+      dispatch({ type: 'UNDO' });
+    }
+  }, [canUndo]);
   
-  const redo = () => dispatch({ type: 'REDO' });
+  const redo = useCallback(() => {
+    if (canRedo) {
+      dispatch({ type: 'REDO' });
+    }
+  }, [canRedo]);
   
-  const clearCanvas = () => {
+  const clearCanvas = useCallback(() => {
     // Save current state to history before clearing
     const historyEntry: HistoryEntry = {
       id: `clear_${Date.now()}`,
@@ -495,14 +599,13 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
     
     dispatch({ type: 'LOAD_STATE', state: clearedState });
     eventBus.emit('drawing:cleared');
-  };
+  }, [state.strokes, state.layers, state.activeLayerId, eventBus]);
   
-  const saveState = async () => {
+  const saveState = useCallback(async () => {
     try {
       const stateToSave = {
         ...state,
         history: [], // Don't save history to reduce size
-        stats: state.stats,
       };
       
       await dataManager.set('drawing_state', stateToSave);
@@ -510,9 +613,9 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
     } catch (error) {
       console.error('Failed to save drawing state:', error);
     }
-  };
+  }, [state, eventBus]);
   
-  const loadSavedState = async () => {
+  const loadSavedState = useCallback(async () => {
     try {
       const savedState = await dataManager.get<Partial<DrawingState>>('drawing_state');
       if (savedState) {
@@ -522,9 +625,9 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
     } catch (error) {
       console.error('Failed to load drawing state:', error);
     }
-  };
+  }, [eventBus]);
   
-  const saveDrawing = async () => {
+  const saveDrawing = useCallback(async () => {
     try {
       const drawingId = `drawing_${Date.now()}`;
       const drawingData = {
@@ -546,9 +649,9 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
       console.error('Failed to save drawing:', error);
       throw error;
     }
-  };
+  }, [state, eventBus]);
   
-  const loadDrawing = async (drawingId: string) => {
+  const loadDrawing = useCallback(async (drawingId: string) => {
     try {
       const drawingData = await dataManager.get<any>(`drawing_${drawingId}`);
       if (drawingData && drawingData.state) {
@@ -559,9 +662,9 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
       console.error('Failed to load drawing:', error);
       throw error;
     }
-  };
+  }, [eventBus]);
   
-  const exportImage = async (format: 'png' | 'jpeg' = 'png', quality: number = 1.0): Promise<string | null> => {
+  const exportImage = useCallback(async (format: 'png' | 'jpeg' = 'png', quality: number = 1.0): Promise<string | null> => {
     try {
       // This would integrate with the ProfessionalCanvas export
       eventBus.emit('drawing:export', { format, quality });
@@ -570,19 +673,24 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
       console.error('Export error:', error);
       return null;
     }
-  };
+  }, [eventBus]);
   
-  const toggleGrid = () => {
+  const toggleGrid = useCallback(() => {
     dispatch({ type: 'SET_GRID_VISIBLE', visible: !state.gridVisible });
-  };
+  }, [state.gridVisible]);
   
-  const setReferenceImage = (imageUri: string | null) => {
+  const setReferenceImage = useCallback((imageUri: string | null) => {
     dispatch({ type: 'SET_REFERENCE_IMAGE', imageUri });
-  };
+  }, []);
   
-  const getDrawingStats = (): DrawingStats => state.stats;
+  const getDrawingStats = useCallback((): DrawingStats => state.stats, [state.stats]);
   
-  const contextValue: DrawingContextValue = {
+  // Performance optimization function
+  const batchUpdate = useCallback((updates: Partial<DrawingState>) => {
+    dispatch({ type: 'BATCH_UPDATE', updates });
+  }, []);
+  
+  const contextValue: DrawingContextValue = useMemo(() => ({
     state,
     dispatch,
     setTool,
@@ -605,7 +713,37 @@ export function DrawingProvider({ children }: DrawingProviderProps) {
     toggleGrid,
     setReferenceImage,
     getDrawingStats,
-  };
+    batchUpdate,
+    canUndo,
+    canRedo,
+    activeLayer,
+  }), [
+    state,
+    setTool,
+    setColor,
+    setBrush,
+    setBrushSize,
+    setOpacity,
+    addStroke,
+    addLayer,
+    deleteLayer,
+    setActiveLayer,
+    updateLayer,
+    setCanvasTransform,
+    undo,
+    redo,
+    clearCanvas,
+    saveDrawing,
+    loadDrawing,
+    exportImage,
+    toggleGrid,
+    setReferenceImage,
+    getDrawingStats,
+    batchUpdate,
+    canUndo,
+    canRedo,
+    activeLayer,
+  ]);
   
   return (
     <DrawingContext.Provider value={contextValue}>

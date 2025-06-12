@@ -351,7 +351,8 @@ export class ProgressionSystem {
       }
 
       // Award XP
-      await profileSystem.addXP(achievement.xpReward);
+      // FIXED: Added source parameter to addXP call
+      await profileSystem.addXP(achievement.xpReward, `achievement:${achievement.id}`);
 
       // Save updated user
       await profileSystem.updateUser(user);
@@ -450,6 +451,7 @@ export class ProgressionSystem {
     if (!user) return;
 
     try {
+      // FIXED: Use the correct incrementStat method with proper parameters
       await profileSystem.incrementStat('totalLessonsCompleted');
       
       if (score >= 0.95) { // 95% or higher is perfect
@@ -495,6 +497,7 @@ export class ProgressionSystem {
 
   public async recordArtworkCreation(artworkId: string): Promise<void> {
     try {
+      // FIXED: Use the correct incrementStat method
       await profileSystem.incrementStat('artworksCreated');
       await this.checkAchievements('creativity', 1);
     } catch (error) {
@@ -506,6 +509,7 @@ export class ProgressionSystem {
 
   public async recordArtworkShared(artworkId: string): Promise<void> {
     try {
+      // FIXED: Use the correct incrementStat method
       await profileSystem.incrementStat('artworksShared');
       await this.checkAchievements('social', 1);
     } catch (error) {
@@ -517,6 +521,7 @@ export class ProgressionSystem {
 
   public async recordChallengeParticipation(challengeId: string, won: boolean): Promise<void> {
     try {
+      // FIXED: Use the correct incrementStat method
       await profileSystem.incrementStat('challengesCompleted');
       await this.checkAchievements('social', 1);
     } catch (error) {
