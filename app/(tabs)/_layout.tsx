@@ -62,7 +62,7 @@ export default function TabLayout() {
           Platform.OS === 'ios' ? (
             <BlurView
               intensity={100}
-              tint={theme?.name === 'dark' ? 'dark' : 'light'}
+              tint={theme?.isDark ? 'dark' : 'light'}
               style={{
                 position: 'absolute',
                 top: 0,
@@ -122,14 +122,21 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-  name="challenges"
-  options={{
-    title: 'Challenges',
-    tabBarIcon: ({ color, focused }) => (
-      <TabBarIcon name={focused ? 'trophy' : 'trophy-outline'} color={color} />
-    ),
-  }}
-  />
+        name="challenges"
+        options={{
+          title: 'Challenges',
+          tabBarLabel: 'Challenges',
+          tabBarIcon: ({ color, size }) => (
+            <Trophy size={size || 24} color={color} strokeWidth={2} />
+          ),
+        }}
+        listeners={{
+          tabPress: (e) => {
+            handleTabPress();
+            console.log('Challenges tab pressed');
+          },
+        }}
+      />
       <Tabs.Screen
         name="learn"
         options={{

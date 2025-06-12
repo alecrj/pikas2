@@ -138,7 +138,7 @@ export default function SettingsScreen() {
 
   const handleThemeChange = (newTheme: 'auto' | 'light' | 'dark') => {
     updateSetting('theme', newTheme);
-    theme.setTheme(newTheme);
+    // Note: Theme will automatically update when settings change
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
