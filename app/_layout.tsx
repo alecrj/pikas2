@@ -36,7 +36,7 @@ export default function RootLayout() {
         
         // Initialize core systems first
         console.log('🎯 Initializing core systems...');
-        performanceMonitor.startSession();
+        performanceMonitor.startMonitoring();
         
         // Initialize learning systems with proper error handling
         console.log('🎓 Initializing learning system...');

@@ -38,7 +38,7 @@ import {
   Upload,
   Filter,
   TrendingUp,
-  Fire,
+  Flame,
 } from 'lucide-react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -197,10 +197,7 @@ export default function ChallengesScreen() {
       };
 
       // Save artwork to portfolio
-      const artworkId = await portfolioManager.addArtwork(user.id, artwork);
-      
-      // Get the saved artwork
-      const savedArtwork = portfolioManager.getArtwork(artworkId);
+      const savedArtwork = portfolioManager.addArtwork(user.id, artwork);
       
       if (savedArtwork) {
         // Submit to challenge

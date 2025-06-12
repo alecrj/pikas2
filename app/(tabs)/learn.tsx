@@ -7,6 +7,7 @@ import {
   Pressable,
   SafeAreaView,
   Alert,
+  RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import Animated, { FadeInUp, FadeInDown } from 'react-native-reanimated';
@@ -397,11 +398,11 @@ export default function LearnScreen() {
       <ScrollView
         style={styles.scrollView}
         refreshControl={
-          refreshing ? (
-            <View style={styles.refreshIndicator} />
-          ) : undefined
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+          />
         }
-        onRefresh={handleRefresh}
       >
         <Animated.View entering={FadeInUp} style={styles.header}>
           <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
