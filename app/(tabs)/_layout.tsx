@@ -122,6 +122,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+  name="challenges"
+  options={{
+    title: 'Challenges',
+    tabBarIcon: ({ color, focused }) => (
+      <TabBarIcon name={focused ? 'trophy' : 'trophy-outline'} color={color} />
+    ),
+  }}
+  />
+      <Tabs.Screen
         name="learn"
         options={{
           title: 'Learn',

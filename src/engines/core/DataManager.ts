@@ -1,34 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { errorHandler } from './ErrorHandler';
+import { UserProfile, LearningProgress, Portfolio } from '../../types';
 
 /**
- * High-performance data management system with caching, compression, and sync
- * Handles all data persistence needs with optimal performance
+ * Enhanced Data Manager with all required methods for contexts and engines
+ * Handles data persistence with proper error handling and type safety
  */
-export class DataManager {
+class DataManager {
   private static instance: DataManager;
-  private cache: Map<string, CacheEntry> = new Map();
-  private pendingWrites: Map<string, any> = new Map();
-  private writeTimer: NodeJS.Timeout | null = null;
-  private readonly cacheMaxSize = 50 * 1024 * 1024; // 50MB cache
-  private currentCacheSize = 0;
-  private readonly writeDebounceMs = 1000;
-  
-  private readonly storageKeys = {
-    USER_PROFILE: 'user_profile',
-    USER_PREFERENCES: 'user_preferences',
-    LEARNING_PROGRESS: 'learning_progress',
-    ARTWORKS: 'artworks',
-    PORTFOLIO: 'portfolio',
-    OFFLINE_QUEUE: 'offline_queue',
-    CACHE_METADATA: 'cache_metadata',
-    DRAWING_STATE: 'drawing_state',
-  };
+  private cache: Map<string, any> = new Map();
+  private writeQueue: Map<string, Promise<void>> = new Map();
 
-  private constructor() {
-    this.initializeCache();
-    this.setupPeriodicCleanup();
-  }
+  private constructor() {}
 
   public static getInstance(): DataManager {
     if (!DataManager.instance) {
@@ -37,383 +19,457 @@ export class DataManager {
     return DataManager.instance;
   }
 
-  private async initializeCache(): Promise<void> {
+  // ---- GENERIC STORAGE METHODS ----
+
+  public async get<T = any>(key: string): Promise<T | null> {
     try {
-      const metadata = await this.loadCacheMetadata();
-      if (metadata) {
-        // Restore frequently accessed items to cache
-        for (const key of metadata.frequentKeys) {
-          const data = await AsyncStorage.getItem(key);
-          if (data) {
-            this.addToCache(key, JSON.parse(data));
-          }
-        }
+      // Check cache first
+      if (this.cache.has(key)) {
+        return this.cache.get(key);
       }
+
+      const value = await AsyncStorage.getItem(key);
+      if (value === null) return null;
+
+      const parsed = JSON.parse(value);
+      
+      // Cache the result
+      this.cache.set(key, parsed);
+      
+      return parsed;
     } catch (error) {
-      errorHandler.handleError(
-        errorHandler.createError('CACHE_INIT_ERROR', 'Failed to initialize cache', 'low', error)
-      );
-    }
-  }
-
-  private setupPeriodicCleanup(): void {
-    // Clean up old cache entries every hour
-    setInterval(() => {
-      this.cleanupCache();
-    }, 60 * 60 * 1000);
-  }
-
-  // Generic data operations with caching
-  public async get<T>(key: string): Promise<T | null> {
-    // Check cache first
-    const cached = this.getFromCache(key);
-    if (cached !== null) {
-      return cached as T;
-    }
-
-    try {
-      const data = await AsyncStorage.getItem(key);
-      if (data) {
-        const parsed = JSON.parse(data);
-        this.addToCache(key, parsed);
-        return parsed as T;
-      }
-      return null;
-    } catch (error) {
-      errorHandler.handleError(
-        errorHandler.storageError(`Failed to get data for key: ${key}`, error)
-      );
+      console.error(`Failed to get data for key ${key}:`, error);
       return null;
     }
   }
 
-  public async set(key: string, value: any): Promise<void> {
-    // Update cache immediately
-    this.addToCache(key, value);
-    
-    // Debounce writes to storage
-    this.pendingWrites.set(key, value);
-    this.schedulePendingWrites();
-  }
-
-  // FIXED: Added missing methods that other parts of the code expect
-  
-  // Alias methods for backward compatibility and different naming conventions
-  public async load<T>(key: string): Promise<T | null> {
-    return this.get<T>(key);
-  }
-
-  public async save(key: string, value: any): Promise<void> {
-    return this.set(key, value);
-  }
-
-  private schedulePendingWrites(): void {
-    if (this.writeTimer) {
-      clearTimeout(this.writeTimer);
-    }
-    
-    this.writeTimer = setTimeout(() => {
-      this.flushPendingWrites();
-    }, this.writeDebounceMs);
-  }
-
-  private async flushPendingWrites(): Promise<void> {
-    const writes = Array.from(this.pendingWrites.entries());
-    this.pendingWrites.clear();
-    
+  public async set<T = any>(key: string, value: T): Promise<void> {
     try {
-      const writePromises = writes.map(([key, value]) => 
-        AsyncStorage.setItem(key, JSON.stringify(value))
-      );
-      await Promise.all(writePromises);
+      // Wait for any pending write for this key
+      if (this.writeQueue.has(key)) {
+        await this.writeQueue.get(key);
+      }
+
+      // Create write promise
+      const writePromise = this.performWrite(key, value);
+      this.writeQueue.set(key, writePromise);
+
+      await writePromise;
+      
+      // Update cache
+      this.cache.set(key, value);
+      
+      // Clear from queue
+      this.writeQueue.delete(key);
     } catch (error) {
-      // Re-add failed writes to pending
-      writes.forEach(([key, value]) => this.pendingWrites.set(key, value));
-      errorHandler.handleError(
-        errorHandler.storageError('Failed to write pending data', error)
-      );
+      console.error(`Failed to set data for key ${key}:`, error);
+      this.writeQueue.delete(key);
+      throw error;
     }
+  }
+
+  private async performWrite<T>(key: string, value: T): Promise<void> {
+    const serialized = JSON.stringify(value);
+    await AsyncStorage.setItem(key, serialized);
   }
 
   public async remove(key: string): Promise<void> {
-    this.removeFromCache(key);
-    this.pendingWrites.delete(key);
-    
     try {
       await AsyncStorage.removeItem(key);
-    } catch (error) {
-      errorHandler.handleError(
-        errorHandler.storageError(`Failed to remove data for key: ${key}`, error)
-      );
-    }
-  }
-
-  // Batch operations for performance
-  public async getBatch<T>(keys: string[]): Promise<Map<string, T>> {
-    const results = new Map<string, T>();
-    const uncachedKeys: string[] = [];
-    
-    // Get cached values
-    keys.forEach(key => {
-      const cached = this.getFromCache(key);
-      if (cached !== null) {
-        results.set(key, cached as T);
-      } else {
-        uncachedKeys.push(key);
-      }
-    });
-    
-    // Fetch uncached values
-    if (uncachedKeys.length > 0) {
-      try {
-        const pairs = await AsyncStorage.multiGet(uncachedKeys);
-        pairs.forEach(([key, value]) => {
-          if (value) {
-            const parsed = JSON.parse(value);
-            results.set(key, parsed as T);
-            this.addToCache(key, parsed);
-          }
-        });
-      } catch (error) {
-        errorHandler.handleError(
-          errorHandler.storageError('Failed to get batch data', error)
-        );
-      }
-    }
-    
-    return results;
-  }
-
-  public async setBatch(items: Map<string, any>): Promise<void> {
-    // Update cache
-    items.forEach((value, key) => {
-      this.addToCache(key, value);
-      this.pendingWrites.set(key, value);
-    });
-    
-    this.schedulePendingWrites();
-  }
-
-  // Cache management
-  private getFromCache(key: string): any | null {
-    const entry = this.cache.get(key);
-    if (entry) {
-      entry.lastAccessed = Date.now();
-      entry.accessCount++;
-      return entry.data;
-    }
-    return null;
-  }
-
-  private addToCache(key: string, data: any): void {
-    const size = this.estimateSize(data);
-    
-    // Remove old entries if cache is full
-    while (this.currentCacheSize + size > this.cacheMaxSize && this.cache.size > 0) {
-      this.evictOldestEntry();
-    }
-    
-    const entry: CacheEntry = {
-      data,
-      size,
-      created: Date.now(),
-      lastAccessed: Date.now(),
-      accessCount: 1,
-    };
-    
-    if (this.cache.has(key)) {
-      this.currentCacheSize -= this.cache.get(key)!.size;
-    }
-    
-    this.cache.set(key, entry);
-    this.currentCacheSize += size;
-  }
-
-  private removeFromCache(key: string): void {
-    const entry = this.cache.get(key);
-    if (entry) {
-      this.currentCacheSize -= entry.size;
       this.cache.delete(key);
+    } catch (error) {
+      console.error(`Failed to remove data for key ${key}:`, error);
+      throw error;
     }
   }
 
-  private evictOldestEntry(): void {
-    let oldestKey: string | null = null;
-    let oldestScore = Infinity;
-    
-    // LRU with frequency consideration
-    this.cache.forEach((entry, key) => {
-      const age = Date.now() - entry.lastAccessed;
-      const score = age / entry.accessCount;
-      if (score < oldestScore) {
-        oldestScore = score;
-        oldestKey = key;
-      }
-    });
-    
-    if (oldestKey) {
-      this.removeFromCache(oldestKey);
-    }
-  }
-
-  private cleanupCache(): void {
-    const now = Date.now();
-    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-    
-    Array.from(this.cache.entries()).forEach(([key, entry]) => {
-      if (now - entry.lastAccessed > maxAge) {
-        this.removeFromCache(key);
-      }
-    });
-    
-    this.saveCacheMetadata();
-  }
-
-  private estimateSize(data: any): number {
-    // Rough estimation of object size in bytes
-    return JSON.stringify(data).length * 2; // UTF-16
-  }
-
-  // Specialized data operations
-  public async saveUserProfile(profile: any): Promise<void> {
-    await this.set(this.storageKeys.USER_PROFILE, profile);
-  }
-
-  public async getUserProfile(): Promise<any | null> {
-    return this.get(this.storageKeys.USER_PROFILE);
-  }
-
-  public async saveLearningProgress(progress: any): Promise<void> {
-    await this.set(this.storageKeys.LEARNING_PROGRESS, progress);
-  }
-
-  public async getLearningProgress(): Promise<any | null> {
-    return this.get(this.storageKeys.LEARNING_PROGRESS);
-  }
-
-  public async saveArtwork(artworkId: string, artwork: any): Promise<void> {
-    const artworks = await this.get<Record<string, any>>(this.storageKeys.ARTWORKS) || {};
-    artworks[artworkId] = artwork;
-    await this.set(this.storageKeys.ARTWORKS, artworks);
-  }
-
-  public async getArtwork(artworkId: string): Promise<any | null> {
-    const artworks = await this.get<Record<string, any>>(this.storageKeys.ARTWORKS);
-    return artworks?.[artworkId] || null;
-  }
-
-  public async getAllArtworks(): Promise<any[]> {
-    const artworks = await this.get<Record<string, any>>(this.storageKeys.ARTWORKS);
-    return artworks ? Object.values(artworks) : [];
-  }
-
-  // FIXED: Added missing portfolio methods
-  public async getPortfolio(): Promise<any[]> {
-    const portfolio = await this.get<any[]>(this.storageKeys.PORTFOLIO);
-    return portfolio || [];
-  }
-
-  public async savePortfolio(portfolioData: any): Promise<void> {
-    // Get current portfolio
-    const currentPortfolio = await this.getPortfolio();
-    
-    // Add new artwork to portfolio
-    const updatedPortfolio = [...currentPortfolio, {
-      ...portfolioData,
-      id: portfolioData.id || `artwork_${Date.now()}`,
-      createdAt: portfolioData.createdAt || new Date(),
-    }];
-    
-    await this.set(this.storageKeys.PORTFOLIO, updatedPortfolio);
-  }
-
-  // Offline queue management
-  public async addToOfflineQueue(action: any): Promise<void> {
-    const queue = await this.get<any[]>(this.storageKeys.OFFLINE_QUEUE) || [];
-    queue.push({
-      ...action,
-      timestamp: Date.now(),
-      id: `${Date.now()}_${Math.random()}`,
-    });
-    await this.set(this.storageKeys.OFFLINE_QUEUE, queue);
-  }
-
-  public async getOfflineQueue(): Promise<any[]> {
-    return await this.get<any[]>(this.storageKeys.OFFLINE_QUEUE) || [];
-  }
-
-  public async clearOfflineQueue(): Promise<void> {
-    await this.remove(this.storageKeys.OFFLINE_QUEUE);
-  }
-
-  // Metadata persistence
-  private async saveCacheMetadata(): Promise<void> {
-    const frequentKeys = Array.from(this.cache.entries())
-      .sort((a, b) => b[1].accessCount - a[1].accessCount)
-      .slice(0, 20)
-      .map(([key]) => key);
-    
-    await AsyncStorage.setItem(
-      this.storageKeys.CACHE_METADATA,
-      JSON.stringify({ frequentKeys, timestamp: Date.now() })
-    );
-  }
-
-  private async loadCacheMetadata(): Promise<any | null> {
+  public async clear(): Promise<void> {
     try {
-      const data = await AsyncStorage.getItem(this.storageKeys.CACHE_METADATA);
-      return data ? JSON.parse(data) : null;
-    } catch {
+      await AsyncStorage.clear();
+      this.cache.clear();
+      this.writeQueue.clear();
+    } catch (error) {
+      console.error('Failed to clear storage:', error);
+      throw error;
+    }
+  }
+
+  // ---- USER PROFILE METHODS ----
+
+  public async getUserProfile(): Promise<UserProfile | null> {
+    return this.get<UserProfile>('user_profile');
+  }
+
+  public async saveUserProfile(profile: UserProfile): Promise<void> {
+    return this.set('user_profile', profile);
+  }
+
+  public async updateUserProfile(updates: Partial<UserProfile>): Promise<UserProfile | null> {
+    try {
+      const currentProfile = await this.getUserProfile();
+      if (!currentProfile) return null;
+
+      const updatedProfile = { ...currentProfile, ...updates };
+      await this.saveUserProfile(updatedProfile);
+      return updatedProfile;
+    } catch (error) {
+      console.error('Failed to update user profile:', error);
       return null;
     }
   }
 
-  // Cleanup and maintenance
-  public async clearAllData(): Promise<void> {
-    this.cache.clear();
-    this.pendingWrites.clear();
-    this.currentCacheSize = 0;
-    
-    if (this.writeTimer) {
-      clearTimeout(this.writeTimer);
-    }
-    
+  // ---- LEARNING PROGRESS METHODS ----
+
+  public async getLearningProgress(): Promise<LearningProgress | null> {
+    return this.get<LearningProgress>('learning_progress');
+  }
+
+  public async saveLearningProgress(progress: LearningProgress): Promise<void> {
+    return this.set('learning_progress', progress);
+  }
+
+  public async updateLearningProgress(updates: Partial<LearningProgress>): Promise<LearningProgress | null> {
     try {
-      await AsyncStorage.clear();
+      const currentProgress = await this.getLearningProgress();
+      if (!currentProgress) return null;
+
+      const updatedProgress = { ...currentProgress, ...updates };
+      await this.saveLearningProgress(updatedProgress);
+      return updatedProgress;
     } catch (error) {
-      errorHandler.handleError(
-        errorHandler.storageError('Failed to clear all data', error)
-      );
+      console.error('Failed to update learning progress:', error);
+      return null;
     }
   }
 
-  public getCacheStats(): {
-    size: number;
-    entries: number;
-    hitRate: number;
-  } {
-    let totalHits = 0;
-    let totalAccess = 0;
-    
-    this.cache.forEach(entry => {
-      totalAccess += entry.accessCount;
-      totalHits += entry.accessCount - 1; // First access is a miss
-    });
-    
-    return {
-      size: this.currentCacheSize,
-      entries: this.cache.size,
-      hitRate: totalAccess > 0 ? totalHits / totalAccess : 0,
+  // ---- LESSON COMPLETION METHODS ----
+
+  public async getCompletedLessons(): Promise<string[]> {
+    const lessons = await this.get<string[]>('completed_lessons');
+    return lessons || [];
+  }
+
+  public async addCompletedLesson(lessonId: string): Promise<void> {
+    try {
+      const completed = await this.getCompletedLessons();
+      if (!completed.includes(lessonId)) {
+        completed.push(lessonId);
+        await this.set('completed_lessons', completed);
+      }
+    } catch (error) {
+      console.error('Failed to add completed lesson:', error);
+      throw error;
+    }
+  }
+
+  public async getLessonProgress(lessonId: string): Promise<number> {
+    try {
+      const progress = await this.get<Record<string, number>>('lesson_progress') || {};
+      return progress[lessonId] || 0;
+    } catch (error) {
+      console.error('Failed to get lesson progress:', error);
+      return 0;
+    }
+  }
+
+  public async setLessonProgress(lessonId: string, progress: number): Promise<void> {
+    try {
+      const allProgress = await this.get<Record<string, number>>('lesson_progress') || {};
+      allProgress[lessonId] = progress;
+      await this.set('lesson_progress', allProgress);
+    } catch (error) {
+      console.error('Failed to set lesson progress:', error);
+      throw error;
+    }
+  }
+
+  // ---- PORTFOLIO METHODS ----
+
+  public async getPortfolio(userId: string): Promise<Portfolio | null> {
+    return this.get<Portfolio>(`portfolio_${userId}`);
+  }
+
+  public async savePortfolio(userId: string, portfolio: Portfolio): Promise<void> {
+    return this.set(`portfolio_${userId}`, portfolio);
+  }
+
+  // ---- SETTINGS METHODS ----
+
+  public async getAppSettings(): Promise<any> {
+    const settings = await this.get('app_settings');
+    return settings || {
+      theme: 'auto',
+      notifications: {
+        lessons: true,
+        achievements: true,
+        social: true,
+        challenges: true,
+      },
+      drawing: {
+        pressureSensitivity: 0.8,
+        smoothing: 0.5,
+        autosave: true,
+        hapticFeedback: true,
+      },
+      learning: {
+        dailyGoal: 1,
+        reminderTime: '19:00',
+        difficulty: 'adaptive',
+      },
     };
   }
-}
 
-interface CacheEntry {
-  data: any;
-  size: number;
-  created: number;
-  lastAccessed: number;
-  accessCount: number;
+  public async saveAppSettings(settings: any): Promise<void> {
+    return this.set('app_settings', settings);
+  }
+
+  public async updateAppSettings(updates: any): Promise<any> {
+    try {
+      const currentSettings = await this.getAppSettings();
+      const updatedSettings = this.deepMerge(currentSettings, updates);
+      await this.saveAppSettings(updatedSettings);
+      return updatedSettings;
+    } catch (error) {
+      console.error('Failed to update app settings:', error);
+      throw error;
+    }
+  }
+
+  // ---- DRAWING DATA METHODS ----
+
+  public async saveDrawing(drawingId: string, drawingData: any): Promise<void> {
+    return this.set(`drawing_${drawingId}`, drawingData);
+  }
+
+  public async getDrawing(drawingId: string): Promise<any> {
+    return this.get(`drawing_${drawingId}`);
+  }
+
+  public async getSavedDrawings(): Promise<string[]> {
+    const drawings = await this.get<string[]>('saved_drawings');
+    return drawings || [];
+  }
+
+  public async addSavedDrawing(drawingId: string): Promise<void> {
+    try {
+      const drawings = await this.getSavedDrawings();
+      if (!drawings.includes(drawingId)) {
+        drawings.push(drawingId);
+        await this.set('saved_drawings', drawings);
+      }
+    } catch (error) {
+      console.error('Failed to add saved drawing:', error);
+      throw error;
+    }
+  }
+
+  // ---- ACHIEVEMENT METHODS ----
+
+  public async getUnlockedAchievements(): Promise<string[]> {
+    const achievements = await this.get<string[]>('unlocked_achievements');
+    return achievements || [];
+  }
+
+  public async unlockAchievement(achievementId: string): Promise<void> {
+    try {
+      const achievements = await this.getUnlockedAchievements();
+      if (!achievements.includes(achievementId)) {
+        achievements.push(achievementId);
+        await this.set('unlocked_achievements', achievements);
+      }
+    } catch (error) {
+      console.error('Failed to unlock achievement:', error);
+      throw error;
+    }
+  }
+
+  // ---- CHALLENGE METHODS ----
+
+  public async getChallengeData(): Promise<any> {
+    return this.get('challenge_data') || {
+      submissions: [],
+      votes: [],
+      participation: [],
+    };
+  }
+
+  public async saveChallengeData(data: any): Promise<void> {
+    return this.set('challenge_data', data);
+  }
+
+  // ---- ANALYTICS METHODS ----
+
+  public async recordEvent(eventType: string, eventData: any): Promise<void> {
+    try {
+      const events = await this.get<any[]>('analytics_events') || [];
+      events.push({
+        type: eventType,
+        data: eventData,
+        timestamp: Date.now(),
+      });
+      
+      // Keep only last 1000 events
+      if (events.length > 1000) {
+        events.splice(0, events.length - 1000);
+      }
+      
+      await this.set('analytics_events', events);
+    } catch (error) {
+      console.error('Failed to record event:', error);
+    }
+  }
+
+  public async getAnalyticsEvents(limit?: number): Promise<any[]> {
+    try {
+      const events = await this.get<any[]>('analytics_events') || [];
+      return limit ? events.slice(-limit) : events;
+    } catch (error) {
+      console.error('Failed to get analytics events:', error);
+      return [];
+    }
+  }
+
+  // ---- CACHE MANAGEMENT ----
+
+  public clearCache(): void {
+    this.cache.clear();
+  }
+
+  public getCacheSize(): number {
+    return this.cache.size;
+  }
+
+  public getCacheKeys(): string[] {
+    return Array.from(this.cache.keys());
+  }
+
+  // ---- BACKUP AND RESTORE ----
+
+  public async exportAllData(): Promise<any> {
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const allData: Record<string, any> = {};
+      
+      for (const key of allKeys) {
+        const value = await AsyncStorage.getItem(key);
+        if (value) {
+          try {
+            allData[key] = JSON.parse(value);
+          } catch {
+            allData[key] = value; // Store as string if not JSON
+          }
+        }
+      }
+      
+      return {
+        exportDate: Date.now(),
+        version: '1.0.0',
+        data: allData,
+      };
+    } catch (error) {
+      console.error('Failed to export data:', error);
+      throw error;
+    }
+  }
+
+  public async importAllData(exportData: any): Promise<void> {
+    try {
+      if (!exportData || !exportData.data) {
+        throw new Error('Invalid export data format');
+      }
+      
+      // Clear existing data
+      await this.clear();
+      
+      // Import new data
+      for (const [key, value] of Object.entries(exportData.data)) {
+        await AsyncStorage.setItem(key, JSON.stringify(value));
+      }
+      
+      // Clear cache to force reload
+      this.clearCache();
+    } catch (error) {
+      console.error('Failed to import data:', error);
+      throw error;
+    }
+  }
+
+  // ---- UTILITY METHODS ----
+
+  private deepMerge(target: any, source: any): any {
+    if (typeof target !== 'object' || target === null) return source;
+    if (typeof source !== 'object' || source === null) return target;
+    
+    const result = { ...target };
+    
+    for (const key in source) {
+      if (source.hasOwnProperty(key)) {
+        if (typeof source[key] === 'object' && source[key] !== null && !Array.isArray(source[key])) {
+          result[key] = this.deepMerge(target[key], source[key]);
+        } else {
+          result[key] = source[key];
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  public async getStorageInfo(): Promise<{
+    totalKeys: number;
+    estimatedSize: number;
+    cacheSize: number;
+  }> {
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      let estimatedSize = 0;
+      
+      for (const key of allKeys.slice(0, 10)) { // Sample first 10 keys
+        const value = await AsyncStorage.getItem(key);
+        if (value) {
+          estimatedSize += value.length;
+        }
+      }
+      
+      // Extrapolate total size
+      const avgKeySize = estimatedSize / Math.min(10, allKeys.length);
+      const totalEstimatedSize = avgKeySize * allKeys.length;
+      
+      return {
+        totalKeys: allKeys.length,
+        estimatedSize: totalEstimatedSize,
+        cacheSize: this.cache.size,
+      };
+    } catch (error) {
+      console.error('Failed to get storage info:', error);
+      return {
+        totalKeys: 0,
+        estimatedSize: 0,
+        cacheSize: this.cache.size,
+      };
+    }
+  }
+
+  // ---- MIGRATION METHODS ----
+
+  public async migrateData(fromVersion: string, toVersion: string): Promise<void> {
+    try {
+      console.log(`Migrating data from ${fromVersion} to ${toVersion}`);
+      
+      // Add migration logic here as needed
+      // This is where you'd handle data structure changes between versions
+      
+      await this.set('data_version', toVersion);
+    } catch (error) {
+      console.error('Failed to migrate data:', error);
+      throw error;
+    }
+  }
+
+  public async getDataVersion(): Promise<string> {
+    const version = await this.get<string>('data_version');
+    return version || '1.0.0';
+  }
 }
 
 // Export singleton instance

@@ -1,160 +1,192 @@
-import React, { useEffect } from 'react';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
+import { Text, View } from 'react-native';
+import { useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import * as SplashScreen from 'expo-splash-screen';
+import Animated, { FadeIn } from 'react-native-reanimated';
+import { StatusBar } from 'expo-status-bar';
+
+// Contexts
 import { ThemeProvider } from '../src/contexts/ThemeContext';
 import { UserProgressProvider } from '../src/contexts/UserProgressContext';
 import { DrawingProvider } from '../src/contexts/DrawingContext';
 import { LearningProvider } from '../src/contexts/LearningContext';
-import { AppErrorBoundary, NavigationDebugger, ContextDebugger } from '../src/utils/DebugUtils';
 
-// Keep the splash screen visible while we fetch resources
-SplashScreen.preventAutoHideAsync();
+// Engines
+import { skillTreeManager } from '../src/engines/learning/SkillTreeManager';
+import { lessonEngine } from '../src/engines/learning/LessonEngine';
+import { challengeSystem } from '../src/engines/community/ChallengeSystem';
+import { brushEngine } from '../src/engines/drawing/BrushEngine';
+import { errorHandler } from '../src/engines/core/ErrorHandler';
+import { performanceMonitor } from '../src/engines/core/PerformanceMonitor';
 
-// Simple error boundary fallback for core engines
-class CoreErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { hasError: boolean }
-> {
-  constructor(props: { children: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    console.error('🚨 Core Error:', error);
-    return { hasError: true };
-  }
-
-  componentDidCatch(error: Error, errorInfo: any) {
-    console.error('🚨 Core Error Details:', error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      // Continue anyway - most features should work
-      console.warn('Recovering from core error, continuing with app...');
-    }
-    return this.props.children;
-  }
-}
+// Components
+import { ErrorBoundary } from '../src/engines/core/ErrorBoundary';
 
 export default function RootLayout() {
-  const [appIsReady, setAppIsReady] = React.useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [initializationError, setInitializationError] = useState<string | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
-    async function prepare() {
-      try {
-        NavigationDebugger.log('App initialization starting');
-        
-        // Initialize with minimal requirements
-        // We'll skip engine initialization as they might not exist yet
-        console.log('Preparing app...');
-        
-        // Just ensure basic setup
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        NavigationDebugger.log('App initialization completed');
-      } catch (e) {
-        console.warn('Error during app initialization (non-critical):', e);
-        // Continue anyway
-      } finally {
-        setAppIsReady(true);
-      }
-    }
+    let mounted = true;
 
-    prepare();
+    const initializeApp = async () => {
+      try {
+        console.log('🚀 App Index: Starting application initialization...');
+        
+        // Initialize core systems first
+        console.log('🎯 Initializing core systems...');
+        performanceMonitor.startSession();
+        
+        // Initialize learning systems with proper error handling
+        console.log('🎓 Initializing learning system...');
+        try {
+          await skillTreeManager.initialize();
+          await lessonEngine.initialize();
+          console.log('✅ Learning system initialized successfully');
+        } catch (error) {
+          console.error('❌ Failed to initialize learning system:', error);
+          errorHandler.handleError(
+            errorHandler.createError(
+              'LEARNING_INIT_ERROR',
+              'Failed to initialize learning system',
+              'high',
+              error
+            )
+          );
+          throw error;
+        }
+
+        // Initialize drawing system
+        console.log('🎨 Initializing drawing system...');
+        try {
+          // Brush engine doesn't need async initialization, but we ensure it's ready
+          const allBrushes = brushEngine.getAllBrushes();
+          console.log(`✅ Drawing system initialized with ${allBrushes.length} brushes`);
+        } catch (error) {
+          console.error('❌ Failed to initialize drawing system:', error);
+          errorHandler.handleError(
+            errorHandler.createError(
+              'DRAWING_INIT_ERROR',
+              'Failed to initialize drawing system',
+              'medium',
+              error
+            )
+          );
+        }
+
+        // Initialize challenge system
+        console.log('🏆 Initializing challenge system...');
+        try {
+          // Challenge system initializes automatically, just verify it's ready
+          const activeChallenges = challengeSystem.getAllActiveChallenges();
+          console.log(`✅ Challenge system initialized with ${activeChallenges.length} active challenges`);
+        } catch (error) {
+          console.error('❌ Failed to initialize challenge system:', error);
+          errorHandler.handleError(
+            errorHandler.createError(
+              'CHALLENGE_INIT_ERROR',
+              'Failed to initialize challenge system',
+              'low',
+              error
+            )
+          );
+        }
+
+        if (mounted) {
+          setIsInitialized(true);
+          console.log('🎉 App initialization completed successfully');
+          
+          // Log performance metrics
+          const metrics = performanceMonitor.getMetrics();
+          console.log('📊 Performance metrics:', metrics);
+        }
+
+      } catch (error) {
+        console.error('💥 App initialization failed:', error);
+        
+        if (mounted) {
+          setInitializationError(
+            error instanceof Error ? error.message : 'Unknown initialization error'
+          );
+        }
+        
+        // Still set as initialized to allow basic app functionality
+        if (mounted) {
+          setIsInitialized(true);
+        }
+      }
+    };
+
+    initializeApp();
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  const onLayoutRootView = React.useCallback(async () => {
-    if (appIsReady) {
-      try {
-        await SplashScreen.hideAsync();
-        NavigationDebugger.log('Splash screen hidden');
-      } catch (error) {
-        console.warn('Failed to hide splash screen:', error);
-      }
-    }
-  }, [appIsReady]);
-
-  if (!appIsReady) {
-    return null;
+  if (!isInitialized) {
+    return (
+      <View style={{ 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center',
+        backgroundColor: '#000000',
+      }}>
+        <Animated.View entering={FadeIn}>
+          <Text style={{ 
+            color: '#FFFFFF', 
+            fontSize: 24, 
+            fontWeight: '700',
+            marginBottom: 16,
+          }}>
+            Pikaso
+          </Text>
+          <Text style={{ 
+            color: '#CCCCCC', 
+            fontSize: 16,
+            textAlign: 'center',
+          }}>
+            Initializing learning platform...
+          </Text>
+          {initializationError && (
+            <Text style={{ 
+              color: '#FF6B6B', 
+              fontSize: 12,
+              textAlign: 'center',
+              marginTop: 8,
+              maxWidth: 300,
+            }}>
+              Warning: {initializationError}
+            </Text>
+          )}
+        </Animated.View>
+      </View>
+    );
   }
 
   return (
-    <AppErrorBoundary>
-      <CoreErrorBoundary>
-        <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
-          <SafeAreaProvider>
-            <ThemeProvider>
-              <UserProgressProvider>
-                <DrawingProvider>
-                  <LearningProvider>
-                    <StatusBar style="auto" />
-                    <Stack
-                      screenOptions={{
-                        headerShown: false,
-                      }}
-                    >
-                      <Stack.Screen 
-                        name="index" 
-                        options={{ 
-                          headerShown: false,
-                          animation: 'none' // Prevent animation issues
-                        }} 
-                      />
-                      <Stack.Screen 
-                        name="onboarding" 
-                        options={{ 
-                          presentation: 'fullScreenModal',
-                          animation: 'slide_from_bottom'
-                        }} 
-                      />
-                      <Stack.Screen 
-                        name="(tabs)" 
-                        options={{ 
-                          headerShown: false,
-                          animation: 'none' // Prevent animation issues
-                        }} 
-                      />
-                      <Stack.Screen 
-                        name="lesson/[id]" 
-                        options={{ 
-                          presentation: 'modal',
-                          animation: 'slide_from_bottom'
-                        }} 
-                      />
-                      <Stack.Screen 
-                        name="drawing/[id]" 
-                        options={{ 
-                          presentation: 'fullScreenModal',
-                          animation: 'slide_from_right'
-                        }} 
-                      />
-                      <Stack.Screen 
-                        name="profile/[id]" 
-                        options={{ 
-                          presentation: 'modal',
-                          animation: 'slide_from_bottom'
-                        }} 
-                      />
-                      <Stack.Screen 
-                        name="settings" 
-                        options={{ 
-                          presentation: 'modal',
-                          animation: 'slide_from_bottom'
-                        }} 
-                      />
-                    </Stack>
-                  </LearningProvider>
-                </DrawingProvider>
-              </UserProgressProvider>
-            </ThemeProvider>
-          </SafeAreaProvider>
-        </GestureHandlerRootView>
-      </CoreErrorBoundary>
-    </AppErrorBoundary>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ErrorBoundary>
+        <ThemeProvider>
+          <UserProgressProvider>
+            <DrawingProvider>
+              <LearningProvider>
+                <StatusBar style="auto" />
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="index" />
+                  <Stack.Screen name="onboarding" />
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="lesson/[id]" />
+                  <Stack.Screen name="drawing/[id]" />
+                  <Stack.Screen name="profile/[id]" />
+                  <Stack.Screen name="settings" />
+                </Stack>
+              </LearningProvider>
+            </DrawingProvider>
+          </UserProgressProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
   );
 }
