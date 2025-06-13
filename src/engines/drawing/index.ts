@@ -1,14 +1,16 @@
 // src/engines/drawing/index.ts
-export { ProfessionalCanvas } from './ProfessionalCanvas';
-export { BrushEngine } from './BrushEngine';
-export { PerformanceOptimizer } from './PerformanceOptimizer';
 
-export async function initializeDrawingEngine(): Promise<void> {
-  try {
-    // Drawing engine doesn't need explicit initialization
-    console.log('Drawing engine initialized successfully');
-  } catch (error) {
-    console.error('Failed to initialize drawing engine:', error);
-    throw error;
-  }
-}
+// Core engines
+export { valkyrieEngine, ValkyrieEngine } from './ValkyrieEngine';
+export { brushEngine, BrushEngine } from './BrushEngine';
+export { layerManager, LayerManager } from './LayerManager';
+export { colorManager, ColorManager } from './ColorManager';
+export { gestureRecognizer, GestureRecognizer } from './GestureRecognizer';
+export { transformManager, TransformManager } from './TransformManager';
+
+// Main canvas component
+export { ProfessionalCanvas } from './ProfessionalCanvas';
+export type { ProfessionalCanvasProps } from './ProfessionalCanvas';
+
+// Re-export all drawing types
+export * from '../../types/drawing';

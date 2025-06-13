@@ -1,758 +1,166 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { 
-  DrawingState, 
-  DrawingTool, 
-  Stroke, 
-  Layer, 
-  Color, 
+  valkyrieEngine, 
+  brushEngine, 
+  layerManager, 
+  colorManager,
+  Tool,
   Brush,
-  DrawingMode,
-  CanvasSettings,
-  DrawingStats,
-  HistoryEntry,
-} from '../types';
-import { brushEngine } from '../engines/drawing/BrushEngine';
-import { dataManager } from '../engines/core/DataManager';
+  Color,
+  Layer,
+  Transform,
+} from '../engines/drawing';
 import { EventBus } from '../engines/core/EventBus';
 
-// Action types for drawing state management
-type DrawingAction =
-  | { type: 'SET_TOOL'; tool: DrawingTool }
-  | { type: 'SET_COLOR'; color: Color }
-  | { type: 'SET_BRUSH'; brush: Brush }
-  | { type: 'SET_BRUSH_SIZE'; size: number }
-  | { type: 'SET_OPACITY'; opacity: number }
-  | { type: 'ADD_STROKE'; stroke: Stroke }
-  | { type: 'REMOVE_STROKE'; strokeId: string }
-  | { type: 'ADD_LAYER'; layer: Layer }
-  | { type: 'UPDATE_LAYER'; layerId: string; updates: Partial<Layer> }
-  | { type: 'DELETE_LAYER'; layerId: string }
-  | { type: 'SET_ACTIVE_LAYER'; layerId: string }
-  | { type: 'REORDER_LAYERS'; layers: Layer[] }
-  | { type: 'SET_CANVAS_SIZE'; width: number; height: number }
-  | { type: 'SET_ZOOM'; zoom: number }
-  | { type: 'SET_PAN'; pan: { x: number; y: number } }
-  | { type: 'SET_ROTATION'; rotation: number }
-  | { type: 'SET_GRID_VISIBLE'; visible: boolean }
-  | { type: 'SET_GRID_SIZE'; size: number }
-  | { type: 'SET_REFERENCE_IMAGE'; imageUri: string | null }
-  | { type: 'SET_REFERENCE_OPACITY'; opacity: number }
-  | { type: 'SET_DRAWING_MODE'; mode: DrawingMode }
-  | { type: 'ADD_TO_HISTORY'; state: HistoryEntry }
-  | { type: 'UNDO' }
-  | { type: 'REDO' }
-  | { type: 'UPDATE_STATS'; stats: Partial<DrawingStats> }
-  | { type: 'SET_PRESSURE_SENSITIVITY'; enabled: boolean }
-  | { type: 'SET_TILT_SENSITIVITY'; enabled: boolean }
-  | { type: 'SET_VELOCITY_SENSITIVITY'; enabled: boolean }
-  | { type: 'ADD_RECENT_COLOR'; color: string }
-  | { type: 'LOAD_STATE'; state: Partial<DrawingState> }
-  | { type: 'RESET_STATE' }
-  | { type: 'BATCH_UPDATE'; updates: Partial<DrawingState> };
-
-// FIXED: Optimize initial state with default layer
-const createInitialState = (): DrawingState => ({
-  currentTool: 'brush',
-  currentColor: {
-    hex: '#000000',
-    rgb: { r: 0, g: 0, b: 0 },
-    hsb: { h: 0, s: 0, b: 0 },
-    alpha: 1,
-  },
-  currentBrush: null, // Will be set when brush engine initializes
-  brushSize: 3,
-  opacity: 1,
-  layers: [{
-    id: 'layer-1',
-    name: 'Background',
-    type: 'raster',
-    strokes: [],
-    opacity: 1,
-    blendMode: 'normal',
-    visible: true,
-    locked: false,
-    data: null,
-    order: 0,
-  }],
-  activeLayerId: 'layer-1',
-  strokes: [],
-  canvasWidth: 1024,
-  canvasHeight: 768,
-  zoom: 1,
-  pan: { x: 0, y: 0 },
-  rotation: 0,
-  gridVisible: false,
-  gridSize: 20,
-  referenceImage: null,
-  referenceOpacity: 0.5,
-  drawingMode: 'normal',
-  history: [],
-  historyIndex: -1,
-  stats: {
-    totalStrokes: 0,
-    totalTime: 0,
-    layersUsed: 1,
-    colorsUsed: 1,
-    brushesUsed: 1,
-    undoCount: 0,
-    redoCount: 0,
-  },
-  settings: {
-    pressureSensitivity: true,
-    tiltSensitivity: true,
-    velocitySensitivity: true,
-    palmRejection: true,
-    quickMenuEnabled: true,
-    autoSave: true,
-    autoSaveInterval: 300, // 5 minutes
-  },
-  recentColors: ['#000000'],
-  customBrushes: [],
-  savedPalettes: [],
-});
-
-// FIXED: Optimize reducer with better performance and memory management
-function drawingReducer(state: DrawingState, action: DrawingAction): DrawingState {
-  const eventBus = EventBus.getInstance();
-  
-  switch (action.type) {
-    case 'SET_TOOL':
-      return { ...state, currentTool: action.tool };
-      
-    case 'SET_COLOR': {
-      const newRecentColors = [
-        action.color.hex, 
-        ...state.recentColors.filter(c => c !== action.color.hex)
-      ].slice(0, 20);
-      
-      eventBus.emit('drawing:colorChanged', { color: action.color });
-      
-      return { 
-        ...state, 
-        currentColor: action.color,
-        recentColors: newRecentColors,
-        stats: {
-          ...state.stats,
-          colorsUsed: state.stats.colorsUsed + 1,
-        }
-      };
-    }
-      
-    case 'SET_BRUSH': {
-      eventBus.emit('drawing:brushChanged', { brush: action.brush });
-      
-      return { 
-        ...state, 
-        currentBrush: action.brush,
-        brushSize: action.brush.settings.size,
-        opacity: action.brush.settings.opacity,
-        stats: {
-          ...state.stats,
-          brushesUsed: state.stats.brushesUsed + 1,
-        }
-      };
-    }
-      
-    case 'SET_BRUSH_SIZE': {
-      if (state.currentBrush) {
-        const updatedBrush = {
-          ...state.currentBrush,
-          settings: { ...state.currentBrush.settings, size: action.size }
-        };
-        return { ...state, brushSize: action.size, currentBrush: updatedBrush };
-      }
-      return { ...state, brushSize: action.size };
-    }
-      
-    case 'SET_OPACITY': {
-      if (state.currentBrush) {
-        const updatedBrush = {
-          ...state.currentBrush,
-          settings: { ...state.currentBrush.settings, opacity: action.opacity }
-        };
-        return { ...state, opacity: action.opacity, currentBrush: updatedBrush };
-      }
-      return { ...state, opacity: action.opacity };
-    }
-      
-    case 'ADD_STROKE': {
-      eventBus.emit('drawing:strokeAdded', { stroke: action.stroke });
-      
-      return { 
-        ...state, 
-        strokes: [...state.strokes, action.stroke],
-        stats: {
-          ...state.stats,
-          totalStrokes: state.stats.totalStrokes + 1,
-        }
-      };
-    }
-      
-    case 'REMOVE_STROKE':
-      return { 
-        ...state, 
-        strokes: state.strokes.filter(s => s.id !== action.strokeId) 
-      };
-      
-    case 'ADD_LAYER': {
-      eventBus.emit('drawing:layerAdded', { layer: action.layer });
-      
-      return { 
-        ...state, 
-        layers: [...state.layers, action.layer],
-        activeLayerId: action.layer.id,
-        stats: {
-          ...state.stats,
-          layersUsed: state.stats.layersUsed + 1,
-        }
-      };
-    }
-      
-    case 'UPDATE_LAYER':
-      return {
-        ...state,
-        layers: state.layers.map(layer =>
-          layer.id === action.layerId ? { ...layer, ...action.updates } : layer
-        ),
-      };
-      
-    case 'DELETE_LAYER': {
-      const filteredLayers = state.layers.filter(l => l.id !== action.layerId);
-      const newActiveLayerId = state.activeLayerId === action.layerId 
-        ? filteredLayers[filteredLayers.length - 1]?.id || ''
-        : state.activeLayerId;
-      
-      eventBus.emit('drawing:layerDeleted', { layerId: action.layerId });
-      
-      return {
-        ...state,
-        layers: filteredLayers,
-        activeLayerId: newActiveLayerId,
-      };
-    }
-      
-    case 'SET_ACTIVE_LAYER':
-      return { ...state, activeLayerId: action.layerId };
-      
-    case 'REORDER_LAYERS':
-      return { ...state, layers: action.layers };
-      
-    case 'SET_CANVAS_SIZE':
-      return { 
-        ...state, 
-        canvasWidth: action.width, 
-        canvasHeight: action.height 
-      };
-      
-    case 'SET_ZOOM':
-      return { ...state, zoom: action.zoom };
-      
-    case 'SET_PAN':
-      return { ...state, pan: action.pan };
-      
-    case 'SET_ROTATION':
-      return { ...state, rotation: action.rotation };
-      
-    case 'SET_GRID_VISIBLE':
-      return { ...state, gridVisible: action.visible };
-      
-    case 'SET_GRID_SIZE':
-      return { ...state, gridSize: action.size };
-      
-    case 'SET_REFERENCE_IMAGE':
-      return { ...state, referenceImage: action.imageUri };
-      
-    case 'SET_REFERENCE_OPACITY':
-      return { ...state, referenceOpacity: action.opacity };
-      
-    case 'SET_DRAWING_MODE':
-      return { ...state, drawingMode: action.mode };
-      
-    case 'ADD_TO_HISTORY': {
-      const newHistory = state.history.slice(0, state.historyIndex + 1);
-      newHistory.push(action.state);
-      
-      // Limit history to 50 states to prevent memory issues
-      if (newHistory.length > 50) {
-        newHistory.shift();
-      }
-      
-      return {
-        ...state,
-        history: newHistory,
-        historyIndex: newHistory.length - 1,
-      };
-    }
-      
-    case 'UNDO': {
-      if (state.historyIndex > 0) {
-        const previousEntry = state.history[state.historyIndex - 1];
-        eventBus.emit('drawing:undo');
-        
-        return {
-          ...state,
-          // Apply the previous state data
-          ...previousEntry.data,
-          // Keep current history and decrement index
-          history: state.history,
-          historyIndex: state.historyIndex - 1,
-          stats: {
-            ...state.stats,
-            undoCount: state.stats.undoCount + 1,
-          }
-        };
-      }
-      return state;
-    }
-      
-    case 'REDO': {
-      if (state.historyIndex < state.history.length - 1) {
-        const nextEntry = state.history[state.historyIndex + 1];
-        eventBus.emit('drawing:redo');
-        
-        return {
-          ...state,
-          // Apply the next state data
-          ...nextEntry.data,
-          // Keep current history and increment index
-          history: state.history,
-          historyIndex: state.historyIndex + 1,
-          stats: {
-            ...state.stats,
-            redoCount: state.stats.redoCount + 1,
-          }
-        };
-      }
-      return state;
-    }
-      
-    case 'UPDATE_STATS':
-      return {
-        ...state,
-        stats: { ...state.stats, ...action.stats },
-      };
-      
-    case 'SET_PRESSURE_SENSITIVITY':
-      return {
-        ...state,
-        settings: { ...state.settings, pressureSensitivity: action.enabled },
-      };
-      
-    case 'SET_TILT_SENSITIVITY':
-      return {
-        ...state,
-        settings: { ...state.settings, tiltSensitivity: action.enabled },
-      };
-      
-    case 'SET_VELOCITY_SENSITIVITY':
-      return {
-        ...state,
-        settings: { ...state.settings, velocitySensitivity: action.enabled },
-      };
-      
-    case 'ADD_RECENT_COLOR': {
-      const updatedRecentColors = [
-        action.color, 
-        ...state.recentColors.filter(c => c !== action.color)
-      ].slice(0, 20);
-      
-      return { ...state, recentColors: updatedRecentColors };
-    }
-      
-    case 'LOAD_STATE':
-      return { ...state, ...action.state };
-      
-    case 'BATCH_UPDATE':
-      return { ...state, ...action.updates };
-      
-    case 'RESET_STATE':
-      return createInitialState();
-      
-    default:
-      return state;
-  }
-}
-
-// Context types
 interface DrawingContextValue {
-  state: DrawingState;
-  dispatch: React.Dispatch<DrawingAction>;
+  // Tools
+  currentTool: Tool;
+  setCurrentTool: (tool: Tool) => void;
   
-  // Helper functions
-  setTool: (tool: DrawingTool) => void;
-  setColor: (color: Color) => void;
-  setBrush: (brush: Brush) => void;
-  setBrushSize: (size: number) => void;
-  setOpacity: (opacity: number) => void;
-  addStroke: (stroke: Stroke) => void;
-  addLayer: (name?: string) => Layer;
+  // Brushes
+  currentBrush: Brush | null;
+  setCurrentBrush: (brushId: string) => void;
+  
+  // Colors
+  currentColor: Color;
+  setCurrentColor: (color: Color) => void;
+  
+  // Layers
+  layers: Layer[];
+  currentLayer: Layer | null;
+  createLayer: (name?: string) => Layer;
   deleteLayer: (layerId: string) => void;
-  setActiveLayer: (layerId: string) => void;
-  updateLayer: (layerId: string, updates: Partial<Layer>) => void;
-  setCanvasTransform: (zoom: number, pan: { x: number; y: number }, rotation: number) => void;
+  setCurrentLayer: (layerId: string) => void;
+  
+  // Transform
+  canvasTransform: Transform;
+  
+  // Actions
   undo: () => void;
   redo: () => void;
-  clearCanvas: () => void;
-  saveDrawing: () => Promise<void>;
-  loadDrawing: (drawingId: string) => Promise<void>;
-  exportImage: (format: 'png' | 'jpeg', quality?: number) => Promise<string | null>;
-  toggleGrid: () => void;
-  setReferenceImage: (imageUri: string | null) => void;
-  getDrawingStats: () => DrawingStats;
-  
-  // Performance optimized functions
-  batchUpdate: (updates: Partial<DrawingState>) => void;
   canUndo: boolean;
   canRedo: boolean;
-  activeLayer: Layer | null;
 }
 
-// Create the context
-const DrawingContext = createContext<DrawingContextValue | null>(null);
+const DrawingContext = createContext<DrawingContextValue | undefined>(undefined);
 
-// Provider component
-interface DrawingProviderProps {
-  children: ReactNode;
-}
+export function DrawingProvider({ children }: { children: ReactNode }) {
+  const eventBus = EventBus.getInstance();
+  
+  const [currentTool, setCurrentTool] = useState<Tool>('brush');
+  const [currentBrush, setCurrentBrush] = useState<Brush | null>(null);
+  const [currentColor, setCurrentColor] = useState<Color>(colorManager.getCurrentColor());
+  const [layers, setLayers] = useState<Layer[]>([]);
+  const [currentLayer, setCurrentLayerState] = useState<Layer | null>(null);
+  const [canvasTransform, setCanvasTransform] = useState<Transform>({
+    x: 0,
+    y: 0,
+    scale: 1,
+    rotation: 0,
+  });
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
-export function DrawingProvider({ children }: DrawingProviderProps) {
-  const [state, dispatch] = useReducer(drawingReducer, null, createInitialState);
-  const eventBus = useMemo(() => EventBus.getInstance(), []);
-  
-  // FIXED: Memoize computed values for performance
-  const canUndo = useMemo(() => state.historyIndex > 0, [state.historyIndex]);
-  const canRedo = useMemo(() => state.historyIndex < state.history.length - 1, [state.historyIndex, state.history.length]);
-  const activeLayer = useMemo(() => 
-    state.layers.find(layer => layer.id === state.activeLayerId) || null, 
-    [state.layers, state.activeLayerId]
-  );
-  
-  // Initialize default brush on mount
   useEffect(() => {
-    let mounted = true;
+    // Initialize brush
+    brushEngine.setCurrentBrush('procreate-pencil');
+    setCurrentBrush(brushEngine.getCurrentBrush());
     
-    const initializeDrawing = async () => {
-      try {
-        console.log('🎨 Initializing drawing system...');
-        
-        // Set default brush
-        const defaultBrush = brushEngine.getBrush('pencil-2b');
-        if (defaultBrush && mounted) {
-          dispatch({ type: 'SET_BRUSH', brush: defaultBrush });
-        }
-        
-        // Load saved drawing state if exists
-        await loadSavedState();
-        
-        console.log('✅ Drawing system initialized');
-      } catch (error) {
-        console.error('❌ Failed to initialize drawing system:', error);
-      }
-    };
-
-    initializeDrawing();
+    // Subscribe to events
+    const unsubscribers = [
+      eventBus.on('brush:selected', ({ brush }) => setCurrentBrush(brush)),
+      eventBus.on('color:changed', ({ color }) => setCurrentColor(color)),
+      eventBus.on('layers:changed', () => {
+        setLayers(layerManager.getAllLayers());
+        setCurrentLayerState(layerManager.getCurrentLayer());
+      }),
+      eventBus.on('layer:created', () => {
+        setLayers(layerManager.getAllLayers());
+      }),
+      eventBus.on('layer:deleted', () => {
+        setLayers(layerManager.getAllLayers());
+      }),
+      eventBus.on('layer:selected', () => {
+        setCurrentLayerState(layerManager.getCurrentLayer());
+      }),
+      eventBus.on('transform:changed', ({ transform }) => {
+        setCanvasTransform(transform);
+      }),
+      eventBus.on('history:undo', () => {
+        setCanUndo(layerManager.canUndo());
+        setCanRedo(layerManager.canRedo());
+      }),
+      eventBus.on('history:redo', () => {
+        setCanUndo(layerManager.canUndo());
+        setCanRedo(layerManager.canRedo());
+      }),
+    ];
+    
+    // Initial layer setup
+    setLayers(layerManager.getAllLayers());
+    setCurrentLayerState(layerManager.getCurrentLayer());
     
     return () => {
-      mounted = false;
+      unsubscribers.forEach(unsub => unsub());
     };
   }, []);
-  
-  // FIXED: Optimize auto-save with better debouncing
-  useEffect(() => {
-    if (!state.settings.autoSave) return;
-    
-    const autoSaveInterval = setInterval(async () => {
-      try {
-        await saveState();
-      } catch (error) {
-        console.error('Auto-save failed:', error);
-      }
-    }, state.settings.autoSaveInterval * 1000);
-    
-    return () => clearInterval(autoSaveInterval);
-  }, [state.settings.autoSave, state.settings.autoSaveInterval]);
-  
-  // Track drawing time efficiently
-  useEffect(() => {
-    const startTime = Date.now();
-    
-    return () => {
-      const sessionTime = Math.floor((Date.now() - startTime) / 1000);
-      if (sessionTime > 10) { // Only track significant sessions
-        dispatch({ 
-          type: 'UPDATE_STATS', 
-          stats: { totalTime: state.stats.totalTime + sessionTime } 
-        });
-      }
-    };
-  }, []);
-  
-  // FIXED: Optimize helper functions with useCallback
-  const setTool = useCallback((tool: DrawingTool) => {
-    dispatch({ type: 'SET_TOOL', tool });
-  }, []);
-  
-  const setColor = useCallback((color: Color) => {
-    dispatch({ type: 'SET_COLOR', color });
-  }, []);
-  
-  const setBrush = useCallback((brush: Brush) => {
-    dispatch({ type: 'SET_BRUSH', brush });
-  }, []);
-  
-  const setBrushSize = useCallback((size: number) => {
-    dispatch({ type: 'SET_BRUSH_SIZE', size });
-  }, []);
-  
-  const setOpacity = useCallback((opacity: number) => {
-    dispatch({ type: 'SET_OPACITY', opacity });
-  }, []);
-  
-  const addStroke = useCallback((stroke: Stroke) => {
-    dispatch({ type: 'ADD_STROKE', stroke });
-  }, []);
-  
-  const addLayer = useCallback((name?: string): Layer => {
-    const layer: Layer = {
-      id: `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      name: name || `Layer ${state.layers.length + 1}`,
-      type: 'raster',
-      strokes: [],
-      opacity: 1,
-      blendMode: 'normal',
-      visible: true,
-      locked: false,
-      data: null,
-      order: state.layers.length,
-    };
-    
-    dispatch({ type: 'ADD_LAYER', layer });
+
+  const handleSetCurrentTool = (tool: Tool) => {
+    setCurrentTool(tool);
+    eventBus.emit('tool:changed', { tool });
+  };
+
+  const handleSetCurrentBrush = (brushId: string) => {
+    brushEngine.setCurrentBrush(brushId);
+  };
+
+  const handleSetCurrentColor = (color: Color) => {
+    colorManager.setColor(color);
+  };
+
+  const handleCreateLayer = (name?: string) => {
+    const layer = layerManager.createLayer(name);
     return layer;
-  }, [state.layers.length]);
-  
-  const deleteLayer = useCallback((layerId: string) => {
-    if (state.layers.length > 1) {
-      dispatch({ type: 'DELETE_LAYER', layerId });
-    }
-  }, [state.layers.length]);
-  
-  const setActiveLayer = useCallback((layerId: string) => {
-    dispatch({ type: 'SET_ACTIVE_LAYER', layerId });
-  }, []);
-  
-  const updateLayer = useCallback((layerId: string, updates: Partial<Layer>) => {
-    dispatch({ type: 'UPDATE_LAYER', layerId, updates });
-  }, []);
-  
-  const setCanvasTransform = useCallback((zoom: number, pan: { x: number; y: number }, rotation: number) => {
-    // Use batch update for better performance
-    dispatch({ 
-      type: 'BATCH_UPDATE', 
-      updates: { zoom, pan, rotation } 
-    });
-  }, []);
-  
-  const undo = useCallback(() => {
-    if (canUndo) {
-      dispatch({ type: 'UNDO' });
-    }
-  }, [canUndo]);
-  
-  const redo = useCallback(() => {
-    if (canRedo) {
-      dispatch({ type: 'REDO' });
-    }
-  }, [canRedo]);
-  
-  const clearCanvas = useCallback(() => {
-    // Save current state to history before clearing
-    const historyEntry: HistoryEntry = {
-      id: `clear_${Date.now()}`,
-      action: 'clear_canvas',
-      timestamp: Date.now(),
-      data: {
-        strokes: state.strokes,
-        layers: state.layers,
-        activeLayerId: state.activeLayerId,
-      }
-    };
-    
-    dispatch({ type: 'ADD_TO_HISTORY', state: historyEntry });
-    
-    // Reset drawing state but keep settings
-    const clearedState: Partial<DrawingState> = {
-      strokes: [],
-      layers: [{
-        id: 'layer-1',
-        name: 'Background',
-        type: 'raster',
-        strokes: [],
-        opacity: 1,
-        blendMode: 'normal',
-        visible: true,
-        locked: false,
-        data: null,
-        order: 0,
-      }],
-      activeLayerId: 'layer-1',
-    };
-    
-    dispatch({ type: 'LOAD_STATE', state: clearedState });
-    eventBus.emit('drawing:cleared');
-  }, [state.strokes, state.layers, state.activeLayerId, eventBus]);
-  
-  const saveState = useCallback(async () => {
-    try {
-      const stateToSave = {
-        ...state,
-        history: [], // Don't save history to reduce size
-      };
-      
-      await dataManager.set('drawing_state', stateToSave);
-      eventBus.emit('drawing:saved');
-    } catch (error) {
-      console.error('Failed to save drawing state:', error);
-    }
-  }, [state, eventBus]);
-  
-  const loadSavedState = useCallback(async () => {
-    try {
-      const savedState = await dataManager.get<Partial<DrawingState>>('drawing_state');
-      if (savedState) {
-        dispatch({ type: 'LOAD_STATE', state: savedState });
-        eventBus.emit('drawing:loaded');
-      }
-    } catch (error) {
-      console.error('Failed to load drawing state:', error);
-    }
-  }, [eventBus]);
-  
-  const saveDrawing = useCallback(async () => {
-    try {
-      const drawingId = `drawing_${Date.now()}`;
-      const drawingData = {
-        id: drawingId,
-        state: state,
-        createdAt: Date.now(),
-        thumbnail: null, // Would generate thumbnail here
-      };
-      
-      await dataManager.set(`drawing_${drawingId}`, drawingData);
-      
-      // Update drawings list
-      const drawings = await dataManager.get<string[]>('saved_drawings') || [];
-      drawings.push(drawingId);
-      await dataManager.set('saved_drawings', drawings);
-      
-      eventBus.emit('drawing:saved', { drawingId });
-    } catch (error) {
-      console.error('Failed to save drawing:', error);
-      throw error;
-    }
-  }, [state, eventBus]);
-  
-  const loadDrawing = useCallback(async (drawingId: string) => {
-    try {
-      const drawingData = await dataManager.get<any>(`drawing_${drawingId}`);
-      if (drawingData && drawingData.state) {
-        dispatch({ type: 'LOAD_STATE', state: drawingData.state });
-        eventBus.emit('drawing:loaded', { drawingId });
-      }
-    } catch (error) {
-      console.error('Failed to load drawing:', error);
-      throw error;
-    }
-  }, [eventBus]);
-  
-  const exportImage = useCallback(async (format: 'png' | 'jpeg' = 'png', quality: number = 1.0): Promise<string | null> => {
-    try {
-      // This would integrate with the ProfessionalCanvas export
-      eventBus.emit('drawing:export', { format, quality });
-      return null; // Canvas will handle actual export
-    } catch (error) {
-      console.error('Export error:', error);
-      return null;
-    }
-  }, [eventBus]);
-  
-  const toggleGrid = useCallback(() => {
-    dispatch({ type: 'SET_GRID_VISIBLE', visible: !state.gridVisible });
-  }, [state.gridVisible]);
-  
-  const setReferenceImage = useCallback((imageUri: string | null) => {
-    dispatch({ type: 'SET_REFERENCE_IMAGE', imageUri });
-  }, []);
-  
-  const getDrawingStats = useCallback((): DrawingStats => state.stats, [state.stats]);
-  
-  // Performance optimization function
-  const batchUpdate = useCallback((updates: Partial<DrawingState>) => {
-    dispatch({ type: 'BATCH_UPDATE', updates });
-  }, []);
-  
-  const contextValue: DrawingContextValue = useMemo(() => ({
-    state,
-    dispatch,
-    setTool,
-    setColor,
-    setBrush,
-    setBrushSize,
-    setOpacity,
-    addStroke,
-    addLayer,
-    deleteLayer,
-    setActiveLayer,
-    updateLayer,
-    setCanvasTransform,
-    undo,
-    redo,
-    clearCanvas,
-    saveDrawing,
-    loadDrawing,
-    exportImage,
-    toggleGrid,
-    setReferenceImage,
-    getDrawingStats,
-    batchUpdate,
+  };
+
+  const handleDeleteLayer = (layerId: string) => {
+    layerManager.deleteLayer(layerId);
+  };
+
+  const handleSetCurrentLayer = (layerId: string) => {
+    layerManager.setCurrentLayer(layerId);
+  };
+
+  const handleUndo = () => {
+    layerManager.undo();
+  };
+
+  const handleRedo = () => {
+    layerManager.redo();
+  };
+
+  const value: DrawingContextValue = {
+    currentTool,
+    setCurrentTool: handleSetCurrentTool,
+    currentBrush,
+    setCurrentBrush: handleSetCurrentBrush,
+    currentColor,
+    setCurrentColor: handleSetCurrentColor,
+    layers,
+    currentLayer,
+    createLayer: handleCreateLayer,
+    deleteLayer: handleDeleteLayer,
+    setCurrentLayer: handleSetCurrentLayer,
+    canvasTransform,
+    undo: handleUndo,
+    redo: handleRedo,
     canUndo,
     canRedo,
-    activeLayer,
-  }), [
-    state,
-    setTool,
-    setColor,
-    setBrush,
-    setBrushSize,
-    setOpacity,
-    addStroke,
-    addLayer,
-    deleteLayer,
-    setActiveLayer,
-    updateLayer,
-    setCanvasTransform,
-    undo,
-    redo,
-    clearCanvas,
-    saveDrawing,
-    loadDrawing,
-    exportImage,
-    toggleGrid,
-    setReferenceImage,
-    getDrawingStats,
-    batchUpdate,
-    canUndo,
-    canRedo,
-    activeLayer,
-  ]);
-  
-  return (
-    <DrawingContext.Provider value={contextValue}>
-      {children}
-    </DrawingContext.Provider>
-  );
+  };
+
+  return <DrawingContext.Provider value={value}>{children}</DrawingContext.Provider>;
 }
 
-// Custom hook to use the drawing context
 export function useDrawing() {
   const context = useContext(DrawingContext);
   if (!context) {
