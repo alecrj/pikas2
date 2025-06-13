@@ -15,7 +15,7 @@ import {
   BrushPreset,
 } from '../../types/drawing';
 import { 
-  Skia, 
+  CompatSkia,
   SkPaint, 
   SkPath, 
   PaintStyle, 
@@ -27,7 +27,13 @@ import {
   SkMaskFilter,
   SkPathEffect,
   SkImage,
-} from '@shopify/react-native-skia';
+  isSkPath,
+  isSkImage,
+  PathUtils,
+  PaintUtils,
+  TileMode,
+  BlurStyle,
+} from './SkiaCompatibility';
 import { EventBus } from '../core/EventBus';
 import { dataManager } from '../core/DataManager';
 import { valkyrieEngine } from './ValkyrieEngine';
@@ -138,7 +144,7 @@ export class BrushEngine {
     lastPoint: Point | null,
     velocity: number
   ): SkPaint {
-    const paint = Skia.Paint();
+    const paint = CompatSkia.Paint();
     
     // Basic paint setup
     paint.setStyle(PaintStyle.Stroke);
@@ -148,15 +154,17 @@ export class BrushEngine {
     const dynamics = this.calculateBrushDynamics(brush, point, lastPoint, velocity);
     
     // Size
-    paint.setStrokeWidth(dynamics.size);
+    if (dynamics.size !== undefined) {
+      paint.setStrokeWidth(dynamics.size);
+    }
     
     // Opacity
-    const finalOpacity = dynamics.opacity * color.alpha;
+    const finalOpacity = (dynamics.opacity ?? 1) * color.alpha;
     paint.setAlphaf(finalOpacity);
     
     // Color (with dynamics)
     const finalColor = this.applyColorDynamics(brush, color, dynamics);
-    paint.setColor(Skia.Color(finalColor.hex));
+    paint.setColor(CompatSkia.Color(finalColor.hex));
     
     // Blend mode
     paint.setBlendMode(this.getSkiaBlendMode(brush.blendMode || 'normal'));
@@ -201,28 +209,25 @@ export class BrushEngine {
       stamp = this.createCustomShape(brush.shape, size, dynamics);
     } else {
       // Default circle
-      const path = Skia.Path.Make();
+      const path = CompatSkia.Path.Make();
       path.addCircle(0, 0, size / 2);
       stamp = path;
     }
     
     // Cache for performance
-    if (stamp instanceof SkPath) {
+    if (isSkPath(stamp)) {
       // Convert path to image for caching
-      const bounds = stamp.computeTightBounds();
-      const surface = Skia.Surface.Make(
+      const bounds = PathUtils.getBounds(stamp);
+      const surface = CompatSkia.Surface.Make(
         bounds.width + 2,
-        bounds.height + 2,
-        Skia.ColorType.RGBA_8888,
-        Skia.AlphaType.Premul,
-        Skia.ColorSpace.SRGB
+        bounds.height + 2
       );
       
       if (surface) {
         const canvas = surface.getCanvas();
-        const paint = Skia.Paint();
+        const paint = CompatSkia.Paint();
         paint.setAntiAlias(true);
-        paint.setColor(Skia.Color('white'));
+        paint.setColor(CompatSkia.Color('white'));
         
         canvas.translate(-bounds.x + 1, -bounds.y + 1);
         canvas.drawPath(stamp, paint);
@@ -300,6 +305,9 @@ export class BrushEngine {
         Object.assign(brush.grain.settings, settings);
         break;
       case 'Rendering':
+        if (!brush.rendering) {
+          brush.rendering = this.getDefaultRendering();
+        }
         Object.assign(brush.rendering, settings);
         break;
       case 'Wet Mix':
@@ -467,7 +475,7 @@ export class BrushEngine {
 
   // Get brush preview stroke
   public getBrushPreviewPath(brush: Brush, width: number, height: number): SkPath {
-    const path = Skia.Path.Make();
+    const path = CompatSkia.Path.Make();
     const points = this.generatePreviewPoints(width, height);
     
     path.moveTo(points[0].x, points[0].y);
@@ -543,9 +551,6 @@ export class BrushEngine {
       spacing: brush.shape.settings.spacing,
       scatter: 0,
       rotation: 0,
-      roundness: brush.shape.settings.roundness,
-      tiltAngle: 0,
-      tiltMagnitude: 0,
       pressure: point.pressure || 0.5,
       velocity: velocity,
     };
@@ -556,17 +561,17 @@ export class BrushEngine {
       const mappedPressure = this.applyResponseCurve(point.pressure, pressureCurve);
       
       // Size
-      if (brush.dynamics.sizePressure) {
+      if (brush.dynamics.sizePressure && dynamics.size !== undefined) {
         dynamics.size *= mappedPressure;
       }
       
       // Opacity
-      if (brush.dynamics.opacityPressure) {
+      if (brush.dynamics.opacityPressure && dynamics.opacity !== undefined) {
         dynamics.opacity *= mappedPressure;
       }
       
       // Flow
-      if (brush.dynamics.flowPressure) {
+      if (brush.dynamics.flowPressure && dynamics.flow !== undefined) {
         dynamics.flow *= mappedPressure;
       }
     }
@@ -580,12 +585,12 @@ export class BrushEngine {
       dynamics.tiltAngle = tiltAngle;
       
       // Tilt affects size
-      if (brush.dynamics.sizeTilt) {
+      if (brush.dynamics.sizeTilt && dynamics.size !== undefined) {
         dynamics.size *= (1 - tiltMagnitude * 0.5);
       }
       
       // Tilt affects opacity
-      if (brush.dynamics.opacityTilt) {
+      if (brush.dynamics.opacityTilt && dynamics.opacity !== undefined) {
         dynamics.opacity *= (1 - tiltMagnitude * 0.3);
       }
       
@@ -596,7 +601,7 @@ export class BrushEngine {
     }
     
     // Velocity dynamics
-    if (brush.dynamics.sizeVelocity && velocity > 0) {
+    if (brush.dynamics.sizeVelocity && velocity > 0 && dynamics.size !== undefined) {
       const velocityCurve = brush.dynamics.velocityCurve;
       const normalizedVelocity = Math.min(velocity / 500, 1); // Normalize to 0-1
       const mappedVelocity = this.applyResponseCurve(normalizedVelocity, velocityCurve);
@@ -605,20 +610,20 @@ export class BrushEngine {
     }
     
     // Jitter
-    if (brush.dynamics.jitter > 0) {
+    if (brush.dynamics.jitter > 0 && dynamics.size !== undefined) {
       dynamics.scatter = (Math.random() - 0.5) * brush.dynamics.jitter * dynamics.size;
     }
     
     // Rotation jitter
     if (brush.dynamics.rotationJitter > 0) {
-      dynamics.rotation += (Math.random() - 0.5) * brush.dynamics.rotationJitter * 360;
+      dynamics.rotation = (dynamics.rotation ?? 0) + (Math.random() - 0.5) * brush.dynamics.rotationJitter * 360;
     }
     
     // Clamp values
     dynamics.size = Math.max(brush.settings.general.sizeMin, 
-                            Math.min(brush.settings.general.sizeMax, dynamics.size));
-    dynamics.opacity = Math.max(0, Math.min(1, dynamics.opacity));
-    dynamics.flow = Math.max(0, Math.min(1, dynamics.flow));
+                            Math.min(brush.settings.general.sizeMax, dynamics.size ?? brush.settings.general.size));
+    dynamics.opacity = Math.max(0, Math.min(1, dynamics.opacity ?? 1));
+    dynamics.flow = Math.max(0, Math.min(1, dynamics.flow ?? 1));
     
     return dynamics;
   }
@@ -750,12 +755,12 @@ export class BrushEngine {
     
     if (!shader && grain.texture) {
       // Scale texture based on brush size and grain scale
-      const scale = brush.grain.settings.scale * (dynamics.size / 100);
+      const scale = brush.grain.settings.scale * ((dynamics.size ?? 100) / 100);
       
       shader = grain.texture.makeShader(
-        Skia.TileMode.Repeat,
-        Skia.TileMode.Repeat,
-        Skia.Matrix().scale(scale, scale)
+        TileMode.Repeat,
+        TileMode.Repeat,
+        CompatSkia.Matrix().scale(scale, scale)
       );
       
       if (shader) {
@@ -770,9 +775,9 @@ export class BrushEngine {
       const intensity = brush.grain.settings.intensity * brush.grain.settings.textured;
       if (intensity < 1) {
         // Blend with solid color
-        const colorFilter = Skia.ColorFilter.MakeBlend(
+        const colorFilter = CompatSkia.ColorFilter.MakeBlend(
           paint.getColor(),
-          Skia.BlendMode.SrcOver
+          SkiaBlendMode.SrcOver
         );
         paint.setColorFilter(colorFilter);
       }
@@ -822,9 +827,9 @@ export class BrushEngine {
       
       // Blur edges
       if (brush.rendering.edgeBlur > 0) {
-        const blur = Skia.MaskFilter.MakeBlur(
-          Skia.BlurStyle.Normal,
-          brush.rendering.edgeBlur * dynamics.size * 0.1
+        const blur = CompatSkia.MaskFilter.MakeBlur(
+          BlurStyle.Normal,
+          brush.rendering.edgeBlur * (dynamics.size ?? 1) * 0.1
         );
         paint.setMaskFilter(blur);
       }
@@ -917,6 +922,12 @@ export class BrushEngine {
         },
       },
       dynamics: {
+        size: 3,
+        opacity: 1,
+        flow: 1,
+        spacing: 5,
+        scatter: 0,
+        rotation: 0,
         sizePressure: true,
         opacityPressure: true,
         flowPressure: false,
@@ -995,6 +1006,12 @@ export class BrushEngine {
         },
       },
       dynamics: {
+        size: 2,
+        opacity: 1,
+        flow: 1,
+        spacing: 2,
+        scatter: 0,
+        rotation: 0,
         sizePressure: true,
         opacityPressure: false,
         flowPressure: true,
@@ -1085,6 +1102,12 @@ export class BrushEngine {
         },
       },
       dynamics: {
+        size: 20,
+        opacity: 0.8,
+        flow: 0.7,
+        spacing: 15,
+        scatter: 0,
+        rotation: 0,
         sizePressure: true,
         opacityPressure: true,
         flowPressure: true,
@@ -1185,6 +1208,12 @@ export class BrushEngine {
         },
       },
       dynamics: {
+        size: 30,
+        opacity: opacity,
+        flow: 0.8,
+        spacing: 20,
+        scatter: 0,
+        rotation: 0,
         sizePressure: true,
         opacityPressure: true,
         flowPressure: true,
@@ -1272,6 +1301,12 @@ export class BrushEngine {
         },
       },
       dynamics: {
+        size: 50,
+        opacity: softness,
+        flow: 0.1,
+        spacing: 2,
+        scatter: 0,
+        rotation: 0,
         sizePressure: true,
         opacityPressure: true,
         flowPressure: true,
@@ -1362,6 +1397,12 @@ export class BrushEngine {
         },
       },
       dynamics: {
+        size: 40,
+        opacity: 0.7,
+        flow: 0.9,
+        spacing: 30,
+        scatter: 0,
+        rotation: 0,
         sizePressure: true,
         opacityPressure: true,
         flowPressure: false,
@@ -1460,6 +1501,12 @@ export class BrushEngine {
 
   private getDefaultDynamics(): BrushDynamics {
     return {
+      size: 10,
+      opacity: 1,
+      flow: 1,
+      spacing: 10,
+      scatter: 0,
+      rotation: 0,
       sizePressure: true,
       opacityPressure: false,
       flowPressure: false,
@@ -1491,6 +1538,14 @@ export class BrushEngine {
     };
   }
 
+  private getDefaultRendering(): BrushRendering {
+    return {
+      mode: 'normal',
+      edgeBlur: 0,
+      blend: false,
+    };
+  }
+
   private getDefaultWetMix(): WetMixSettings {
     return {
       dilution: 0,
@@ -1518,7 +1573,7 @@ export class BrushEngine {
 
   // Shape creation helpers
   private createBuiltinShape(shape: BrushShape, size: number, dynamics: BrushDynamics): SkPath {
-    const path = Skia.Path.Make();
+    const path = CompatSkia.Path.Make();
     const radius = size / 2;
     
     switch (shape.id) {
@@ -1527,7 +1582,7 @@ export class BrushEngine {
         break;
         
       case 'square':
-        path.addRect(Skia.XYWHRect(-radius, -radius, size, size));
+        path.addRect(CompatSkia.XYWHRect(-radius, -radius, size, size));
         break;
         
       case 'triangle':
@@ -1576,15 +1631,15 @@ export class BrushEngine {
     // Apply roundness
     if (shape.settings.roundness < 100) {
       const scaleY = shape.settings.roundness / 100;
-      const matrix = Skia.Matrix();
+      const matrix = CompatSkia.Matrix();
       matrix.scale(1, scaleY);
       path.transform(matrix);
     }
     
     // Apply rotation
-    if (shape.settings.angle !== 0 || dynamics.rotation !== 0) {
-      const totalRotation = shape.settings.angle + dynamics.rotation;
-      const matrix = Skia.Matrix();
+    if (shape.settings.angle !== 0 || (dynamics.rotation ?? 0) !== 0) {
+      const totalRotation = shape.settings.angle + (dynamics.rotation ?? 0);
+      const matrix = CompatSkia.Matrix();
       matrix.rotate(totalRotation);
       path.transform(matrix);
     }
@@ -1597,7 +1652,7 @@ export class BrushEngine {
     const shapeImage = this.textureCache.get(shape.id);
     if (!shapeImage) {
       // Return default circle if custom shape not found
-      const path = Skia.Path.Make();
+      const path = CompatSkia.Path.Make();
       path.addCircle(0, 0, size / 2);
       return this.pathToImage(path, size);
     }
@@ -1608,13 +1663,10 @@ export class BrushEngine {
   }
 
   private pathToImage(path: SkPath, size: number): SkImage {
-    const bounds = path.computeTightBounds();
-    const surface = Skia.Surface.Make(
+    const bounds = PathUtils.getBounds(path);
+    const surface = CompatSkia.Surface.Make(
       Math.ceil(bounds.width + 2),
-      Math.ceil(bounds.height + 2),
-      Skia.ColorType.RGBA_8888,
-      Skia.AlphaType.Premul,
-      Skia.ColorSpace.SRGB
+      Math.ceil(bounds.height + 2)
     );
     
     if (!surface) {
@@ -1622,9 +1674,9 @@ export class BrushEngine {
     }
     
     const canvas = surface.getCanvas();
-    const paint = Skia.Paint();
+    const paint = CompatSkia.Paint();
     paint.setAntiAlias(true);
-    paint.setColor(Skia.Color('white'));
+    paint.setColor(CompatSkia.Color('white'));
     
     canvas.translate(-bounds.x + 1, -bounds.y + 1);
     canvas.drawPath(path, paint);

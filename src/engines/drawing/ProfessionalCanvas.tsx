@@ -1,33 +1,28 @@
-// src/engines/drawing/ProfessionalCanvas.ts
+// src/engines/drawing/ProfessionalCanvas.tsx
 import React, { useRef, useCallback, useEffect, useState, forwardRef } from 'react';
 import {
   View,
   StyleSheet,
   Dimensions,
-  PanResponder,
-  PanResponderInstance,
-  GestureResponderEvent,
-  PanResponderGestureState,
   Platform,
   Text,
 } from 'react-native';
 import {
   Canvas as SkiaCanvas,
   useCanvasRef,
-  useTouchHandler,
-  TouchInfo,
-  ExtendedTouchInfo,
-  SkiaDomView,
-  useValue,
-  useComputedValue,
-  Skia,
+  CompatSkia,
   SkCanvas,
   SkPaint,
   SkPath,
   SkSurface,
   SkImage,
   BlendMode,
-} from '@shopify/react-native-skia';
+  TouchInfo,
+  ExtendedTouchInfo,
+  createTouchHandler,
+  useValue,
+  useComputedValue,
+} from './SkiaCompatibility';
 import { runOnJS, useSharedValue, withSpring } from 'react-native-reanimated';
 import { valkyrieEngine } from './ValkyrieEngine';
 import { brushEngine } from './BrushEngine';
@@ -74,7 +69,6 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
       onStrokeUpdate,
       onStrokeEnd,
       settings = {},
-      // ...any other props you need
     },
     ref
   ) => {
@@ -136,6 +130,8 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
     symmetryEnabled: false,
     symmetryType: 'vertical',
     referenceEnabled: false,
+    quickShapeEnabled: true,
+    streamlineAmount: 0.5,
     ...settings,
   };
 
@@ -200,7 +196,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
   };
 
   // Touch handler for Skia canvas
-  const touchHandler = useTouchHandler({
+  const touchHandler = createTouchHandler({
     onStart: (touch: TouchInfo) => {
       'worklet';
       runOnJS(handleTouchStart)(touch);
@@ -213,7 +209,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
       'worklet';
       runOnJS(handleTouchEnd)(touch);
     },
-  }, [currentTool, currentBrush, currentColor]);
+  });
 
   // Handle touch start
   const handleTouchStart = useCallback((touch: TouchInfo) => {
@@ -288,7 +284,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
     const point: Point = {
       x: touch.x,
       y: touch.y,
-      pressure: (touch as ExtendedTouchInfo).force || 0.5,
+      pressure: (touch as ExtendedTouchInfo).force || (touch as ExtendedTouchInfo).pressure || 0.5,
       tiltX: (touch as ExtendedTouchInfo).tiltX,
       tiltY: (touch as ExtendedTouchInfo).tiltY,
       timestamp: Date.now(),
@@ -304,12 +300,12 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
       brushId: currentBrush.id,
       color: { ...currentColor },
       points: [transformedPoint],
-      layerId: layerManager.getCurrentLayerId(),
+      layerId: layerManager.getCurrentLayerId() || '',
       timestamp: Date.now(),
     };
     
     // Initialize stroke path
-    strokePath.current = Skia.Path.Make();
+    strokePath.current = CompatSkia.Path.Make();
     strokePath.current.moveTo(transformedPoint.x, transformedPoint.y);
     
     // Track stroke start
@@ -318,7 +314,9 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
     velocityHistory.current = [];
     
     // Notify listeners
-    onStrokeStart?.(currentStroke.current);
+    if (currentStroke.current) {
+      onStrokeStart?.(currentStroke.current);
+    }
     eventBus.emit('stroke:start', { stroke: currentStroke.current });
   };
 
@@ -329,7 +327,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
     const point: Point = {
       x: touch.x,
       y: touch.y,
-      pressure: touch.force || 0.5,
+      pressure: touch.force || touch.pressure || 0.5,
       tiltX: touch.tiltX,
       tiltY: touch.tiltY,
       timestamp: Date.now(),
@@ -349,7 +347,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
     }
     
     // Apply smoothing if enabled
-    const smoothedPoint = mergedSettings.smoothing > 0
+    const smoothedPoint = mergedSettings.smoothing > 0 && lastPoint.current
       ? applySmoothingToPoint(transformedPoint, lastPoint.current, mergedSettings.smoothing)
       : transformedPoint;
     
@@ -397,7 +395,6 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
   const renderStrokeSegment = (from: Point, to: Point, velocity: number) => {
     if (!currentBrush || !canvasRef.current) return;
     
-    const canvas = canvasRef.current;
     const surface = layerManager.getCurrentLayerSurface();
     if (!surface) return;
     
@@ -416,7 +413,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
     );
     
     // Create path for segment
-    const segmentPath = Skia.Path.Make();
+    const segmentPath = CompatSkia.Path.Make();
     segmentPath.moveTo(from.x, from.y);
     
     // Use quadratic bezier for smoothness
@@ -428,16 +425,17 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
     // Render with Valkyrie engine
     valkyrieEngine.renderPath(segmentPath, surface, paint, {
       predictive: mergedSettings.predictiveStroke,
-      priority: 3, // High priority for active strokes
+      priority: 3,
     });
     
     // Add dirty region for efficient rendering
-    const bounds = segmentPath.computeTightBounds();
+    const bounds = segmentPath.getBounds();
+    const strokeWidth = paint.getStrokeWidth();
     valkyrieEngine.addDirtyRegion(
-      bounds.x - paint.getStrokeWidth(),
-      bounds.y - paint.getStrokeWidth(),
-      bounds.width + paint.getStrokeWidth() * 2,
-      bounds.height + paint.getStrokeWidth() * 2
+      bounds.x - strokeWidth,
+      bounds.y - strokeWidth,
+      bounds.width + strokeWidth * 2,
+      bounds.height + strokeWidth * 2
     );
   };
 
@@ -448,7 +446,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
       x: t.x,
       y: t.y,
       id: t.id,
-      timestamp: t.timestamp,
+      timestamp: t.timestamp || Date.now(),
     }));
   };
 
@@ -606,7 +604,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
   const calculateVelocity = (current: Point, last: Point): number => {
     const dx = current.x - last.x;
     const dy = current.y - last.y;
-    const dt = current.timestamp - last.timestamp;
+    const dt = (current.timestamp ?? Date.now()) - (last.timestamp ?? Date.now());
     
     if (dt === 0) return 0;
     
@@ -614,14 +612,12 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
     return distance / dt;
   };
 
-  const applySmoothingToPoint = (current: Point, last: Point | null, amount: number): Point => {
-    if (!last) return current;
-    
+  const applySmoothingToPoint = (current: Point, last: Point, amount: number): Point => {
     return {
       ...current,
       x: last.x + (current.x - last.x) * (1 - amount),
       y: last.y + (current.y - last.y) * (1 - amount),
-      pressure: last.pressure + (current.pressure - last.pressure) * (1 - amount),
+      pressure: (last.pressure ?? 0.5) + ((current.pressure ?? 0.5) - (last.pressure ?? 0.5)) * (1 - amount),
     };
   };
 
