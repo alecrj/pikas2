@@ -1,4 +1,9 @@
-// src/engines/drawing/ValkyrieEngine.ts
+// src/engines/drawing/ValkyrieEngine.ts - FIXED COMMERCIAL GRADE
+/**
+ * Valkyrie Graphics Engine - Procreate-level rendering performance
+ * Fixed for React Native Skia compatibility with 120fps support
+ */
+
 import { 
     SkCanvas, 
     SkPaint, 
@@ -10,20 +15,17 @@ import {
     StrokeCap,
     StrokeJoin,
     BlendMode as SkiaBlendMode,
-    FilterMode,
-    MipmapMode,
-    ColorSpace,
-    AlphaType,
-    ColorType,
+    SkRect,
+    ClipOp,
   } from '@shopify/react-native-skia';
   import { Platform } from 'react-native';
-  import { Point, Stroke, Layer, BlendMode } from '../../types';
+  import { Point, Stroke, Layer, BlendMode } from '../../types/drawing';
   import { performanceOptimizer } from './PerformanceOptimizer';
   import { EventBus } from '../core/EventBus';
+  import { CompatSkia } from './SkiaCompatibility';
   
   /**
-   * Valkyrie Graphics Engine - Procreate-level rendering performance
-   * Inspired by Procreate's Metal-based engine with 120Hz support
+   * Valkyrie Graphics Engine - Commercial Grade
    */
   export class ValkyrieEngine {
     private static instance: ValkyrieEngine;
@@ -34,7 +36,7 @@ import {
     private readonly FRAME_BUDGET = 1000 / this.TARGET_FPS; // 8.33ms
     private readonly PREDICTION_FRAMES = 3; // Predictive stroke technology
     
-    // Canvas surfaces
+    // Canvas surfaces - Fixed surface management
     private mainSurface: SkSurface | null = null;
     private compositeSurface: SkSurface | null = null;
     private layerSurfaces: Map<string, SkSurface> = new Map();
@@ -60,7 +62,6 @@ import {
     private canvasWidth = 0;
     private canvasHeight = 0;
     private pixelRatio = 1;
-    private colorSpace: ColorSpace;
     
     // Rendering statistics
     private stats = {
@@ -76,7 +77,6 @@ import {
     private constructor() {
       this.strokePredictor = new StrokePredictor();
       this.surfacePool = new SurfacePool();
-      this.colorSpace = Skia.ColorSpace.SRGB;
       
       this.initializeEngine();
     }
@@ -115,6 +115,16 @@ import {
       this.layerSurfaces.set(layerId, surface);
       
       return surface;
+    }
+  
+    // FIXED: Added missing getLayerSurface method
+    public getLayerSurface(layerId: string): SkSurface | null {
+      return this.layerSurfaces.get(layerId) || null;
+    }
+  
+    // FIXED: Added missing getMainSurface method
+    public getMainSurface(): SkSurface | null {
+      return this.mainSurface;
     }
   
     public releaseLayerSurface(layerId: string): void {
@@ -192,6 +202,44 @@ import {
       this.renderingPaused = false;
     }
   
+    // FIXED: Added missing getSkiaBlendMode method
+    public getSkiaBlendMode(mode: BlendMode): SkiaBlendMode {
+      const blendModes: Record<BlendMode, SkiaBlendMode> = {
+        'normal': SkiaBlendMode.SrcOver,
+        'multiply': SkiaBlendMode.Multiply,
+        'screen': SkiaBlendMode.Screen,
+        'overlay': SkiaBlendMode.Overlay,
+        'soft-light': SkiaBlendMode.SoftLight,
+        'hard-light': SkiaBlendMode.HardLight,
+        'color-dodge': SkiaBlendMode.ColorDodge,
+        'color-burn': SkiaBlendMode.ColorBurn,
+        'darken': SkiaBlendMode.Darken,
+        'lighten': SkiaBlendMode.Lighten,
+        'difference': SkiaBlendMode.Difference,
+        'exclusion': SkiaBlendMode.Exclusion,
+        'hue': SkiaBlendMode.Hue,
+        'saturation': SkiaBlendMode.Saturation,
+        'color': SkiaBlendMode.Color,
+        'luminosity': SkiaBlendMode.Luminosity,
+        'clear': SkiaBlendMode.Clear,
+        'source': SkiaBlendMode.Src,
+        'destination': SkiaBlendMode.Dst,
+        'source-over': SkiaBlendMode.SrcOver,
+        'destination-over': SkiaBlendMode.DstOver,
+        'source-in': SkiaBlendMode.SrcIn,
+        'destination-in': SkiaBlendMode.DstIn,
+        'source-out': SkiaBlendMode.SrcOut,
+        'destination-out': SkiaBlendMode.DstOut,
+        'source-atop': SkiaBlendMode.SrcATop,
+        'destination-atop': SkiaBlendMode.DstATop,
+        'xor': SkiaBlendMode.Xor,
+        'plus': SkiaBlendMode.Plus,
+        'modulate': SkiaBlendMode.Modulate,
+      };
+      
+      return blendModes[mode] || SkiaBlendMode.SrcOver;
+    }
+  
     // ===== PRIVATE METHODS =====
   
     private initializeEngine(): void {
@@ -209,32 +257,14 @@ import {
       const width = Math.ceil(this.canvasWidth * this.pixelRatio);
       const height = Math.ceil(this.canvasHeight * this.pixelRatio);
       
-      // Main surface for final output
-      this.mainSurface = Skia.Surface.Make(
-        width,
-        height,
-        ColorType.RGBA_8888,
-        AlphaType.Premul,
-        this.colorSpace
-      );
+      // Main surface for final output - FIXED: Use compatible surface creation
+      this.mainSurface = CompatSkia.Surface.Make(width, height);
       
       // Composite surface for layer blending
-      this.compositeSurface = Skia.Surface.Make(
-        width,
-        height,
-        ColorType.RGBA_8888,
-        AlphaType.Premul,
-        this.colorSpace
-      );
+      this.compositeSurface = CompatSkia.Surface.Make(width, height);
       
       // Stroke buffer for immediate feedback
-      this.strokeBufferSurface = Skia.Surface.Make(
-        width,
-        height,
-        ColorType.RGBA_8888,
-        AlphaType.Premul,
-        this.colorSpace
-      );
+      this.strokeBufferSurface = CompatSkia.Surface.Make(width, height);
     }
   
     private enqueueRender(command: RenderCommand): void {
@@ -348,10 +378,9 @@ import {
       canvas.save();
       
       if (viewport) {
-        canvas.clipRect(
-          Skia.XYWHRect(viewport.x, viewport.y, viewport.width, viewport.height),
-          true
-        );
+        // FIXED: clipRect with proper parameters
+        const rect = Skia.XYWHRect(viewport.x, viewport.y, viewport.width, viewport.height);
+        canvas.clipRect(rect, ClipOp.Intersect, true);
       }
       
       // Clear canvas
@@ -460,43 +489,6 @@ import {
         a.y + a.height < b.y ||
         b.y + b.height < a.y
       );
-    }
-  
-    private getSkiaBlendMode(mode: BlendMode): SkiaBlendMode {
-      const blendModes: Record<BlendMode, SkiaBlendMode> = {
-        'normal': SkiaBlendMode.SrcOver,
-        'multiply': SkiaBlendMode.Multiply,
-        'screen': SkiaBlendMode.Screen,
-        'overlay': SkiaBlendMode.Overlay,
-        'soft-light': SkiaBlendMode.SoftLight,
-        'hard-light': SkiaBlendMode.HardLight,
-        'color-dodge': SkiaBlendMode.ColorDodge,
-        'color-burn': SkiaBlendMode.ColorBurn,
-        'darken': SkiaBlendMode.Darken,
-        'lighten': SkiaBlendMode.Lighten,
-        'difference': SkiaBlendMode.Difference,
-        'exclusion': SkiaBlendMode.Exclusion,
-        'hue': SkiaBlendMode.Hue,
-        'saturation': SkiaBlendMode.Saturation,
-        'color': SkiaBlendMode.Color,
-        'luminosity': SkiaBlendMode.Luminosity,
-        'clear': SkiaBlendMode.Clear,
-        'source': SkiaBlendMode.Src,
-        'destination': SkiaBlendMode.Dst,
-        'source-over': SkiaBlendMode.SrcOver,
-        'destination-over': SkiaBlendMode.DstOver,
-        'source-in': SkiaBlendMode.SrcIn,
-        'destination-in': SkiaBlendMode.DstIn,
-        'source-out': SkiaBlendMode.SrcOut,
-        'destination-out': SkiaBlendMode.DstOut,
-        'source-atop': SkiaBlendMode.SrcATop,
-        'destination-atop': SkiaBlendMode.DstATop,
-        'xor': SkiaBlendMode.Xor,
-        'plus': SkiaBlendMode.Plus,
-        'modulate': SkiaBlendMode.Modulate,
-      };
-      
-      return blendModes[mode] || SkiaBlendMode.SrcOver;
     }
   
     private setupPerformanceMonitoring(): void {
@@ -690,14 +682,8 @@ import {
         return surface;
       }
       
-      // Create new surface
-      return Skia.Surface.Make(
-        width * pixelRatio,
-        height * pixelRatio,
-        ColorType.RGBA_8888,
-        AlphaType.Premul,
-        Skia.ColorSpace.SRGB
-      )!;
+      // Create new surface - FIXED: Use compatible surface creation
+      return CompatSkia.Surface.Make(width * pixelRatio, height * pixelRatio)!;
     }
     
     release(surface: SkSurface): void {
