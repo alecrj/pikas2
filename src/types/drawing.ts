@@ -1,4 +1,4 @@
-// src/types/drawing.ts
+// src/types/drawing.ts - FIXED COMMERCIAL GRADE
 
 // ===== CORE TYPES =====
 
@@ -54,10 +54,12 @@ export interface Point {
     timestamp: number;
   }
   
+  // FIXED: Added missing locked property
   export interface ColorPalette {
     id: string;
     name: string;
     colors: Color[];
+    locked: boolean;
     created: number;
     modified: number;
   }
@@ -79,15 +81,20 @@ export interface Point {
   
   export type ColorSpace = 'rgb' | 'hsb' | 'cmyk' | 'lab';
   
-  export type ColorHarmony = 
-    | 'complementary'
-    | 'analogous'
-    | 'triadic'
-    | 'tetradic'
-    | 'split-complementary'
-    | 'double-complementary'
-    | 'square'
-    | 'monochromatic';
+  // FIXED: Changed ColorHarmony from union to interface
+  export interface ColorHarmony {
+    type: 'complementary' | 'analogous' | 'triadic' | 'tetradic' | 'split-complementary' | 'double-complementary' | 'square' | 'monochromatic';
+    baseColor: Color;
+    harmonicColors: Color[];
+  }
+  
+  // FIXED: Added missing ColorPickerMode interface
+  export interface ColorPickerMode {
+    type: 'wheel' | 'slider' | 'grid' | 'eyedropper';
+    showAlpha: boolean;
+    showHistory: boolean;
+    showEyedropper: boolean;
+  }
   
   export interface ColorProfile {
     id: string;
@@ -226,6 +233,7 @@ export interface Point {
     };
   }
   
+  // FIXED: Added missing spacing property to BrushDynamics
   export interface BrushDynamics {
     sizePressure: boolean;
     opacityPressure: boolean;
@@ -240,14 +248,17 @@ export interface Point {
     rotationJitter: number; // 0-1
     pressureCurve: number[]; // Response curve points
     velocityCurve: number[]; // Response curve points
+    // FIXED: Added all missing properties used in BrushEngine
     size?: number;
     opacity?: number;
     flow?: number;
+    spacing?: number; // CRITICAL FIX
     rotation?: number;
     tiltMagnitude?: number;
     tiltAngle?: number;
     scatter?: number;
     pressure?: number;
+    velocity?: number;
   }
   
   export interface BrushRendering {
@@ -559,3 +570,7 @@ export interface Point {
     sides?: number; // For polygons
     innerRadius?: number; // For stars
   }
+  
+  // ===== USER TYPES - FIXED: Added missing SkillLevel =====
+  
+  export type SkillLevel = 'beginner' | 'some-experience' | 'intermediate' | 'advanced';

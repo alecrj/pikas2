@@ -684,7 +684,7 @@ export const ProfessionalCanvas = React.forwardRef<any, ProfessionalCanvasProps>
       <SkiaCanvas
         ref={canvasRef}
         style={styles.canvas}
-        onTouch={touchHandler}
+        onTouchStart={touchHandler}
       />
       {renderDebugInfo()}
     </View>

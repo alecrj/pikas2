@@ -27,4 +27,4 @@ export interface ProfessionalCanvasProps {
 export * from './SkiaCompatibility';
 
 // Re-export all drawing types
-export * from '../../types/drawing';
+export type * from '../../types/drawing';

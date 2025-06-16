@@ -1,4 +1,4 @@
-// src/engines/drawing/ValkyrieEngine.ts - FIXED COMMERCIAL GRADE
+// src/engines/drawing/ValkyrieEngine.ts
 /**
  * Valkyrie Graphics Engine - Procreate-level rendering performance
  * Fixed for React Native Skia compatibility with 120fps support
@@ -10,7 +10,6 @@ import {
     SkPath, 
     SkSurface, 
     SkImage,
-    Skia,
     PaintStyle,
     StrokeCap,
     StrokeJoin,
@@ -117,12 +116,10 @@ import {
       return surface;
     }
   
-    // FIXED: Added missing getLayerSurface method
     public getLayerSurface(layerId: string): SkSurface | null {
       return this.layerSurfaces.get(layerId) || null;
     }
   
-    // FIXED: Added missing getMainSurface method
     public getMainSurface(): SkSurface | null {
       return this.mainSurface;
     }
@@ -143,7 +140,7 @@ import {
     ): void {
       const command: RenderCommand = {
         type: 'stroke',
-        data: { stroke, paint: paint.copy(), options },
+        data: { stroke, paint: this.copyPaint(paint), options },
         surface,
         priority: options.priority || RenderPriority.NORMAL,
       };
@@ -159,7 +156,7 @@ import {
     ): void {
       const command: RenderCommand = {
         type: 'path',
-        data: { path, paint: paint.copy(), options },
+        data: { path, paint: this.copyPaint(paint), options },
         surface,
         priority: options.priority || RenderPriority.NORMAL,
       };
@@ -202,7 +199,6 @@ import {
       this.renderingPaused = false;
     }
   
-    // FIXED: Added missing getSkiaBlendMode method
     public getSkiaBlendMode(mode: BlendMode): SkiaBlendMode {
       const blendModes: Record<BlendMode, SkiaBlendMode> = {
         'normal': SkiaBlendMode.SrcOver,
@@ -257,7 +253,7 @@ import {
       const width = Math.ceil(this.canvasWidth * this.pixelRatio);
       const height = Math.ceil(this.canvasHeight * this.pixelRatio);
       
-      // Main surface for final output - FIXED: Use compatible surface creation
+      // Main surface for final output
       this.mainSurface = CompatSkia.Surface.Make(width, height);
       
       // Composite surface for layer blending
@@ -350,7 +346,7 @@ import {
         );
         
         // Render predicted points with reduced opacity
-        const predictedPaint = paint.copy();
+        const predictedPaint = this.copyPaint(paint);
         predictedPaint.setAlphaf(paint.getAlphaf() * 0.5);
         
         const path = this.createPathFromPoints([...stroke.points, ...predicted]);
@@ -378,13 +374,12 @@ import {
       canvas.save();
       
       if (viewport) {
-        // FIXED: clipRect with proper parameters
-        const rect = Skia.XYWHRect(viewport.x, viewport.y, viewport.width, viewport.height);
+        const rect = CompatSkia.XYWHRect(viewport.x, viewport.y, viewport.width, viewport.height);
         canvas.clipRect(rect, ClipOp.Intersect, true);
       }
       
       // Clear canvas
-      canvas.clear(Skia.Color('transparent'));
+      canvas.clear(CompatSkia.Color('transparent'));
       
       // Composite each layer
       for (const layer of layers) {
@@ -394,7 +389,7 @@ import {
         if (!layerSurface) continue;
         
         const layerImage = layerSurface.makeImageSnapshot();
-        const paint = Skia.Paint();
+        const paint = CompatSkia.Paint();
         
         paint.setAlphaf(layer.opacity);
         paint.setBlendMode(this.getSkiaBlendMode(layer.blendMode));
@@ -406,7 +401,7 @@ import {
     }
   
     private createPathFromPoints(points: Point[]): SkPath {
-      const path = Skia.Path.Make();
+      const path = CompatSkia.Path.Make();
       
       if (points.length === 0) return path;
       
@@ -489,6 +484,34 @@ import {
         a.y + a.height < b.y ||
         b.y + b.height < a.y
       );
+    }
+  
+    private copyPaint(paint: SkPaint): SkPaint {
+      const newPaint = CompatSkia.Paint();
+      
+      // Copy basic properties
+      newPaint.setStyle(paint.getStyle());
+      newPaint.setStrokeWidth(paint.getStrokeWidth());
+      newPaint.setColor(paint.getColor());
+      newPaint.setAlphaf(paint.getAlphaf());
+      newPaint.setAntiAlias(true);
+      
+      // Copy blend mode if available
+      if (typeof paint.getBlendMode === 'function') {
+        newPaint.setBlendMode(paint.getBlendMode());
+      }
+      
+      // Copy stroke properties
+      if (paint.getStyle() === PaintStyle.Stroke) {
+        if (typeof paint.getStrokeCap === 'function') {
+          newPaint.setStrokeCap(paint.getStrokeCap());
+        }
+        if (typeof paint.getStrokeJoin === 'function') {
+          newPaint.setStrokeJoin(paint.getStrokeJoin());
+        }
+      }
+      
+      return newPaint;
     }
   
     private setupPerformanceMonitoring(): void {
@@ -625,7 +648,7 @@ import {
           x: predictedX,
           y: predictedY,
           pressure: predictedPressure,
-          timestamp: current.timestamp + dt,
+          timestamp: (current.timestamp ?? Date.now()) + dt,
         };
         
         predicted.push(predictedPoint);
@@ -640,7 +663,7 @@ import {
       
       const p1 = points[points.length - 2];
       const p2 = points[points.length - 1];
-      const dt = p2.timestamp - p1.timestamp;
+      const dt = (p2.timestamp ?? Date.now()) - (p1.timestamp ?? Date.now());
       
       if (dt === 0) return { x: 0, y: 0 };
       
@@ -658,7 +681,7 @@ import {
       
       const p1 = points[points.length - 2];
       const p2 = points[points.length - 1];
-      const dt = p2.timestamp - p1.timestamp;
+      const dt = (p2.timestamp ?? Date.now()) - (p1.timestamp ?? Date.now());
       
       if (dt === 0) return { x: 0, y: 0 };
       
@@ -682,7 +705,7 @@ import {
         return surface;
       }
       
-      // Create new surface - FIXED: Use compatible surface creation
+      // Create new surface
       return CompatSkia.Surface.Make(width * pixelRatio, height * pixelRatio)!;
     }
     
@@ -690,7 +713,7 @@ import {
       if (this.pool.length < this.MAX_POOL_SIZE) {
         // Clear surface before returning to pool
         const canvas = surface.getCanvas();
-        canvas.clear(Skia.Color('transparent'));
+        canvas.clear(CompatSkia.Color('transparent'));
         
         this.pool.push(surface);
       }
