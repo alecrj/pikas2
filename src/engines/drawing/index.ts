@@ -1,4 +1,4 @@
-// src/engines/drawing/index.ts - FIXED EXPORTS
+// src/engines/drawing/index.ts
 
 // Core engines
 export { valkyrieEngine, ValkyrieEngine } from './ValkyrieEngine';
@@ -7,6 +7,7 @@ export { layerManager, LayerManager } from './LayerManager';
 export { colorManager, ColorManager } from './ColorManager';
 export { gestureRecognizer, GestureRecognizer } from './GestureRecognizer';
 export { transformManager, TransformManager } from './TransformManager';
+export { performanceOptimizer, PerformanceOptimizer } from './PerformanceOptimizer';
 
 // Main canvas component
 export { ProfessionalCanvas } from './ProfessionalCanvas';
@@ -21,6 +22,9 @@ export interface ProfessionalCanvasProps {
   onStrokeEnd?: (stroke: any) => void;
   settings?: any;
 }
+
+// Re-export compatibility layer
+export * from './SkiaCompatibility';
 
 // Re-export all drawing types
 export * from '../../types/drawing';

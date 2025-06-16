@@ -14,11 +14,11 @@ import {
   import { dataManager } from '../core/DataManager';
   import { 
     SkSurface, 
-    SkImage, 
-    Skia,
+    SkImage,
     ColorType,
     AlphaType,
   } from '@shopify/react-native-skia';
+  import { CompatSkia } from './SkiaCompatibility';
   
   /**
    * Layer Manager - Procreate-level layer system
@@ -206,7 +206,7 @@ import {
       if (sourceSurface && destSurface) {
         const sourceImage = sourceSurface.makeImageSnapshot();
         const canvas = destSurface.getCanvas();
-        const paint = Skia.Paint();
+        const paint = CompatSkia.Paint();
         
         canvas.drawImage(sourceImage, 0, 0, paint);
       }
@@ -245,7 +245,7 @@ import {
       // Merge top layer into bottom
       const topImage = topSurface.makeImageSnapshot();
       const canvas = bottomSurface.getCanvas();
-      const paint = Skia.Paint();
+      const paint = CompatSkia.Paint();
       
       paint.setAlphaf(topLayer.opacity);
       paint.setBlendMode(valkyrieEngine.getSkiaBlendMode(topLayer.blendMode));
@@ -603,7 +603,7 @@ import {
       const surface = valkyrieEngine.getLayerSurface(layerId);
       if (surface) {
         const canvas = surface.getCanvas();
-        canvas.clear(Skia.Color('transparent'));
+        canvas.clear(CompatSkia.Color('transparent'));
       }
       
       // Invalidate cache
@@ -716,15 +716,15 @@ import {
           
           // Restore image data
           if (imageData) {
-            const image = Skia.Image.MakeFromEncoded(
-              Skia.Data.fromBase64(imageData)
+            const image = CompatSkia.Image.MakeFromEncoded(
+              CompatSkia.Data.fromBase64(imageData)
             );
             
             if (image) {
               const surface = valkyrieEngine.getLayerSurface(layer.id);
               if (surface) {
                 const canvas = surface.getCanvas();
-                const paint = Skia.Paint();
+                const paint = CompatSkia.Paint();
                 canvas.drawImage(image, 0, 0, paint);
               }
             }

@@ -2,7 +2,7 @@
 import { 
     TouchInfo, 
     ExtendedTouchInfo 
-  } from '@shopify/react-native-skia';
+  } from './SkiaCompatibility';
   import { 
     GestureType, 
     GestureConfig,
@@ -156,7 +156,7 @@ import {
         this.touchStartPositions.set(touch.id, {
           x: touch.x,
           y: touch.y,
-          timestamp: touch.timestamp,
+          timestamp: touch.timestamp || Date.now(),
         });
       });
       
@@ -208,7 +208,7 @@ import {
         
         // Single tap - wait to see if it's a double tap
         this.lastTapTime = Date.now();
-        this.lastTapPosition = { x: touch.x, y: touch.y, timestamp: touch.timestamp };
+        this.lastTapPosition = { x: touch.x, y: touch.y, timestamp: touch.timestamp || Date.now() };
         
         return 'tap';
       }
