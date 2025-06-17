@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { 
   valkyrieEngine, 
   brushEngine, 
@@ -44,7 +44,7 @@ interface DrawingContextValue {
 
 const DrawingContext = createContext<DrawingContextValue | undefined>(undefined);
 
-export function DrawingProvider({ children }: { children: ReactNode }) {
+export const DrawingProvider = ({ children }: { children: ReactNode }) => {
   const eventBus = EventBus.getInstance();
   
   const [currentTool, setCurrentTool] = useState<Tool>('brush');
@@ -105,41 +105,43 @@ export function DrawingProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const handleSetCurrentTool = (tool: Tool) => {
+  // FIXED: Memoize all callback functions to prevent new references
+  const handleSetCurrentTool = useCallback((tool: Tool) => {
     setCurrentTool(tool);
     eventBus.emit('tool:changed', { tool });
-  };
+  }, []);
 
-  const handleSetCurrentBrush = (brushId: string) => {
+  const handleSetCurrentBrush = useCallback((brushId: string) => {
     brushEngine.setCurrentBrush(brushId);
-  };
+  }, []);
 
-  const handleSetCurrentColor = (color: Color) => {
+  const handleSetCurrentColor = useCallback((color: Color) => {
     colorManager.setColor(color);
-  };
+  }, []);
 
-  const handleCreateLayer = (name?: string) => {
+  const handleCreateLayer = useCallback((name?: string) => {
     const layer = layerManager.createLayer(name);
     return layer;
-  };
+  }, []);
 
-  const handleDeleteLayer = (layerId: string) => {
+  const handleDeleteLayer = useCallback((layerId: string) => {
     layerManager.deleteLayer(layerId);
-  };
+  }, []);
 
-  const handleSetCurrentLayer = (layerId: string) => {
+  const handleSetCurrentLayer = useCallback((layerId: string) => {
     layerManager.setCurrentLayer(layerId);
-  };
+  }, []);
 
-  const handleUndo = () => {
+  const handleUndo = useCallback(() => {
     layerManager.undo();
-  };
+  }, []);
 
-  const handleRedo = () => {
+  const handleRedo = useCallback(() => {
     layerManager.redo();
-  };
+  }, []);
 
-  const value: DrawingContextValue = {
+  // FIXED: Memoize the entire context value to prevent infinite re-renders
+  const value = useMemo<DrawingContextValue>(() => ({
     currentTool,
     setCurrentTool: handleSetCurrentTool,
     currentBrush,
@@ -156,15 +158,32 @@ export function DrawingProvider({ children }: { children: ReactNode }) {
     redo: handleRedo,
     canUndo,
     canRedo,
-  };
+  }), [
+    currentTool,
+    handleSetCurrentTool,
+    currentBrush,
+    handleSetCurrentBrush,
+    currentColor,
+    handleSetCurrentColor,
+    layers,
+    currentLayer,
+    handleCreateLayer,
+    handleDeleteLayer,
+    handleSetCurrentLayer,
+    canvasTransform,
+    handleUndo,
+    handleRedo,
+    canUndo,
+    canRedo,
+  ]);
 
   return <DrawingContext.Provider value={value}>{children}</DrawingContext.Provider>;
-}
+};
 
-export function useDrawing() {
+export const useDrawing = () => {
   const context = useContext(DrawingContext);
   if (!context) {
     throw new Error('useDrawing must be used within a DrawingProvider');
   }
   return context;
-}
+};

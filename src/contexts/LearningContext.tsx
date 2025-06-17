@@ -1,18 +1,29 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+  useMemo,
+  useRef,
+} from 'react';
 import { Lesson, SkillTree, LearningProgress, LearningContextType } from '../types';
 import { skillTreeManager } from '../engines/learning/SkillTreeManager';
 import { lessonEngine } from '../engines/learning/LessonEngine';
-import { challengeSystem } from '../engines/community/ChallengeSystem';
 import { errorHandler } from '../engines/core/ErrorHandler';
 
+// Props for the LearningProvider component
 interface LearningProviderProps {
   children: ReactNode;
 }
 
+// Define the LearningContext with a null default value
 const LearningContext = createContext<LearningContextType | null>(null);
 
+// LearningProvider component to wrap the app or relevant components
 export function LearningProvider({ children }: LearningProviderProps) {
-  // State management
+  // State management for learning-related data
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [lessonState, setLessonState] = useState<any>(null);
   const [isLoadingLesson, setIsLoadingLesson] = useState(false);
@@ -24,135 +35,130 @@ export function LearningProvider({ children }: LearningProviderProps) {
   const [currentStreak, setCurrentStreak] = useState(0);
   const [recommendedLesson, setRecommendedLesson] = useState<Lesson | null>(null);
   const [recommendedLessons, setRecommendedLessons] = useState<Lesson[]>([]);
-  const [currentSkillTree, setCurrentSkillTree] = useState<SkillTree | null>(null);
+  const [currentSkillTree, setCurrentSkillTreeState] = useState<SkillTree | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Insights for learning recommendations
-  const [insights] = useState([
-    {
-      id: 'daily_practice',
-      type: 'suggestion' as const,
-      title: 'Daily Practice',
-      description: 'Practice for 15 minutes daily to build muscle memory',
-      actionable: true,
-    },
-    {
-      id: 'foundation_focus',
-      type: 'improvement' as const,
-      title: 'Foundation Skills',
-      description: 'Master basic shapes before moving to complex drawings',
-      actionable: true,
-    },
-    {
-      id: 'streak_building',
-      type: 'achievement' as const,
-      title: 'Building Momentum',
-      description: 'You\'re on track for a 7-day learning streak!',
-      actionable: false,
-    },
-  ]);
+  // Ref to manage lesson state subscription cleanup
+  const lessonStateUnsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Memoized insights for user feedback
+  const insights = useMemo(
+    () => [
+      {
+        id: 'daily_practice',
+        type: 'suggestion' as const,
+        title: 'Daily Practice',
+        description: 'Practice for 15 minutes daily to build muscle memory',
+        actionable: true,
+      },
+      {
+        id: 'foundation_focus',
+        type: 'improvement' as const,
+        title: 'Foundation Skills',
+        description: 'Master basic shapes before moving to complex drawings',
+        actionable: true,
+      },
+      {
+        id: 'streak_building',
+        type: 'achievement' as const,
+        title: 'Building Momentum',
+        description: "You're on track for a 7-day learning streak!",
+        actionable: false,
+      },
+    ],
+    []
+  );
 
   // Initialize the learning system
+  const initializeLearning = useCallback(async () => {
+    try {
+      console.log('🎓 Initializing learning system...');
+      await skillTreeManager.initialize();
+      await lessonEngine.initialize();
+
+      const trees = skillTreeManager.getAllSkillTrees();
+      setSkillTrees(trees);
+
+      if (trees.length > 0 && !currentSkillTree) {
+        const defaultTree = trees.find((tree) => tree.id === 'drawing-fundamentals') || trees[0];
+        setCurrentSkillTreeState(defaultTree);
+      }
+
+      const lessons = skillTreeManager.getAvailableLessons();
+      setAvailableLessons(lessons);
+      const unlocked = lessons.map((lesson) => lesson.id);
+      setUnlockedLessons(unlocked);
+
+      const recommended = lessons.slice(0, 3);
+      setRecommendedLessons(recommended);
+      setRecommendedLesson(recommended[0] || null);
+
+      const unsubscribe = skillTreeManager.subscribeToProgress((progress) => {
+        setLearningProgress(progress);
+        setCompletedLessons(progress.completedLessons);
+        setCurrentStreak(progress.currentStreak);
+      });
+
+      setIsInitialized(true);
+      console.log('✅ Learning system initialized successfully');
+      return unsubscribe;
+    } catch (error) {
+      console.error('❌ Failed to initialize learning system:', error);
+      errorHandler.handleError(
+        errorHandler.createError(
+          'LEARNING_INIT_ERROR',
+          'Failed to initialize learning system',
+          'high',
+          error
+        )
+      );
+      return () => {};
+    }
+  }, [currentSkillTree]);
+
+  // Effect to initialize the learning system on mount
   useEffect(() => {
     let mounted = true;
+    let unsubscribe: (() => void) | undefined;
 
-    const initializeLearning = async () => {
-      try {
-        console.log('🎓 Initializing learning system...');
-
-        // Initialize all learning engines
-        await skillTreeManager.initialize();
-        await lessonEngine.initialize();
-
-        if (!mounted) return;
-
-        // Load skill trees
-        const trees = skillTreeManager.getAllSkillTrees();
-        setSkillTrees(trees);
-
-        // Set default skill tree (first available)
-        if (trees.length > 0 && !currentSkillTree) {
-          const defaultTree = trees.find(tree => tree.id === 'drawing-fundamentals') || trees[0];
-          setCurrentSkillTree(defaultTree);
-        }
-
-        // Load available lessons
-        const lessons = skillTreeManager.getAvailableLessons();
-        setAvailableLessons(lessons);
-
-        // Get unlocked lesson IDs
-        const unlocked = lessons.map(lesson => lesson.id);
-        setUnlockedLessons(unlocked);
-
-        // Get recommended lessons
-        const recommended = lessons.slice(0, 3);
-        setRecommendedLessons(recommended);
-        setRecommendedLesson(recommended[0] || null);
-
-        // Subscribe to progress updates
-        const unsubscribe = skillTreeManager.subscribeToProgress((progress) => {
-          if (mounted) {
-            setLearningProgress(progress);
-            setCompletedLessons(progress.completedLessons);
-            setCurrentStreak(progress.currentStreak);
-          }
-        });
-
-        setIsInitialized(true);
-        console.log('✅ Learning system initialized successfully');
-
-        return () => {
-          unsubscribe();
-        };
-      } catch (error) {
-        console.error('❌ Failed to initialize learning system:', error);
-        errorHandler.handleError(
-          errorHandler.createError(
-            'LEARNING_INIT_ERROR',
-            'Failed to initialize learning system',
-            'high',
-            error
-          )
-        );
+    const runInitialization = async () => {
+      if (mounted) {
+        unsubscribe = await initializeLearning();
       }
     };
 
-    initializeLearning();
+    runInitialization();
 
     return () => {
       mounted = false;
+      if (unsubscribe) unsubscribe();
+      if (lessonStateUnsubscribeRef.current) lessonStateUnsubscribeRef.current();
     };
-  }, []);
+  }, [initializeLearning]);
 
-  // Update available lessons when skill tree changes
+  // Effect to update available lessons when skill tree or progress changes
   useEffect(() => {
     if (isInitialized && currentSkillTree) {
       const lessons = skillTreeManager.getAvailableLessons(currentSkillTree.id);
       setAvailableLessons(lessons);
-      
-      const unlocked = lessons.map(lesson => lesson.id);
+      const unlocked = lessons.map((lesson) => lesson.id);
       setUnlockedLessons(unlocked);
     }
   }, [currentSkillTree, isInitialized, completedLessons]);
 
-  // Lesson management functions
+  // Start a lesson
   const startLesson = useCallback(async (lesson: Lesson): Promise<void> => {
     try {
       setIsLoadingLesson(true);
       setCurrentLesson(lesson);
-      
       await lessonEngine.startLesson(lesson);
-      
-      // Subscribe to lesson state updates
+
       const unsubscribe = lessonEngine.subscribeToLessonState((state) => {
         setLessonState(state);
       });
-      
+      lessonStateUnsubscribeRef.current = unsubscribe;
+
       console.log(`🎯 Started lesson: ${lesson.title}`);
-      
-      // Clean up subscription when lesson completes
-      // Note: Returning unsubscribe function would change return type,
-      // so we'll handle cleanup elsewhere
     } catch (error) {
       console.error('Failed to start lesson:', error);
       throw error;
@@ -161,6 +167,7 @@ export function LearningProvider({ children }: LearningProviderProps) {
     }
   }, []);
 
+  // Pause the current lesson
   const pauseLesson = useCallback(async () => {
     if (currentLesson) {
       lessonEngine.pauseLesson();
@@ -168,6 +175,7 @@ export function LearningProvider({ children }: LearningProviderProps) {
     }
   }, [currentLesson]);
 
+  // Resume the current lesson
   const resumeLesson = useCallback(async () => {
     if (currentLesson) {
       lessonEngine.resumeLesson();
@@ -175,128 +183,166 @@ export function LearningProvider({ children }: LearningProviderProps) {
     }
   }, [currentLesson]);
 
-  const completeLesson = useCallback(async (score: number = 100): Promise<void> => {
-    if (!currentLesson) return;
-    
-    try {
-      // Complete in lesson engine
-      const result = await lessonEngine.completeLesson({});
-      
-      // Update skill tree progress
-      await skillTreeManager.completeLesson(currentLesson.id, score);
-      
-      // Update local state
-      setCompletedLessons(prev => [...prev, currentLesson.id]);
-      
-      // Clear current lesson
-      setCurrentLesson(null);
-      setLessonState(null);
-      
-      console.log(`🎉 Lesson completed: ${currentLesson.title} (Score: ${score})`);
-      
-      // Note: We don't return the result to match the interface expectation
-    } catch (error) {
-      console.error('Failed to complete lesson:', error);
-      throw error;
-    }
-  }, [currentLesson]);
+  // Complete the current lesson
+  const completeLesson = useCallback(
+    async (score: number = 100): Promise<void> => {
+      if (!currentLesson) return;
 
+      try {
+        await lessonEngine.completeLesson({});
+        await skillTreeManager.completeLesson(currentLesson.id, score);
+        setCurrentLesson(null);
+        setLessonState(null);
+
+        if (lessonStateUnsubscribeRef.current) {
+          lessonStateUnsubscribeRef.current();
+          lessonStateUnsubscribeRef.current = null;
+        }
+
+        console.log(`🎉 Lesson completed: ${currentLesson.title} (Score: ${score})`);
+      } catch (error) {
+        console.error('Failed to complete lesson:', error);
+        throw error;
+      }
+    },
+    [currentLesson]
+  );
+
+  // Exit the current lesson
   const exitLesson = useCallback(async () => {
     setCurrentLesson(null);
     setLessonState(null);
+    if (lessonStateUnsubscribeRef.current) {
+      lessonStateUnsubscribeRef.current();
+      lessonStateUnsubscribeRef.current = null;
+    }
     console.log('🚪 Exited lesson');
   }, []);
 
-  // Progress management
-  const updateProgress = useCallback(async (stepIndex: number, completed: boolean) => {
-    if (!currentLesson) return;
-    
-    try {
-      // This would update the current lesson's progress
-      console.log(`📈 Progress updated: Step ${stepIndex + 1} ${completed ? 'completed' : 'started'}`);
-    } catch (error) {
-      console.error('Failed to update progress:', error);
-    }
-  }, [currentLesson]);
+  // Update progress for the current lesson
+  const updateProgress = useCallback(
+    async (stepIndex: number, completed: boolean) => {
+      if (!currentLesson) return;
+      try {
+        console.log(
+          `📈 Progress updated: Step ${stepIndex + 1} ${completed ? 'completed' : 'started'}`
+        );
+      } catch (error) {
+        console.error('Failed to update progress:', error);
+      }
+    },
+    [currentLesson]
+  );
 
+  // Add a hint for the user
   const addHint = useCallback((hint: string) => {
     console.log(`💡 Hint provided: ${hint}`);
-    // This would be handled by the lesson engine UI
   }, []);
 
-  const validateStep = useCallback(async (stepIndex: number, userInput: any): Promise<boolean> => {
-    if (!currentLesson) return false;
-    
-    try {
-      const result = await lessonEngine.validateStep(currentLesson, stepIndex, userInput);
-      return result.isValid;
-    } catch (error) {
-      console.error('Failed to validate step:', error);
-      return false;
-    }
-  }, [currentLesson]);
+  // Validate a lesson step
+  const validateStep = useCallback(
+    async (stepIndex: number, userInput: any): Promise<boolean> => {
+      if (!currentLesson) return false;
+      try {
+        const result = await lessonEngine.validateStep(currentLesson, stepIndex, userInput);
+        return result.isValid;
+      } catch (error) {
+        console.error('Failed to validate step:', error);
+        return false;
+      }
+    },
+    [currentLesson]
+  );
 
-  // Utility functions
+  // Get a specific lesson by ID
   const getLesson = useCallback((lessonId: string): Lesson | null => {
     return skillTreeManager.getLesson(lessonId);
   }, []);
 
+  // Get progress for a specific lesson
   const getLessonProgress = useCallback((lessonId: string): number => {
     return skillTreeManager.getLessonProgress(lessonId);
   }, []);
 
+  // Get the next recommended lesson
   const getNextLesson = useCallback((): Lesson | null => {
     return skillTreeManager.getRecommendedNextLesson();
   }, []);
 
+  // Check if a lesson’s unlock requirements are met
   const checkUnlockRequirements = useCallback((lessonId: string): boolean => {
     return skillTreeManager.checkUnlockRequirements(lessonId);
   }, []);
 
-  // Context value
-  const contextValue: LearningContextType = {
-    // State
-    currentLesson,
-    lessonState,
-    isLoadingLesson,
-    skillTrees,
-    availableLessons,
-    unlockedLessons,
-    learningProgress,
-    completedLessons,
-    currentStreak,
-    recommendedLesson,
-    recommendedLessons,
-    insights,
-    currentSkillTree,
-    setCurrentSkillTree,
+  // Set the current skill tree
+  const setCurrentSkillTree = useCallback((skillTree: SkillTree | null) => {
+    setCurrentSkillTreeState(skillTree);
+  }, []);
 
-    // Lesson management
-    startLesson,
-    pauseLesson,
-    resumeLesson,
-    completeLesson,
-    exitLesson,
-
-    // Progress management
-    updateProgress,
-    addHint,
-    validateStep,
-
-    // Utility functions
-    getLesson,
-    getLessonProgress,
-    getNextLesson,
-    checkUnlockRequirements,
-  };
-
-  return (
-    <LearningContext.Provider value={contextValue}>
-      {children}
-    </LearningContext.Provider>
+  // Memoized context value to prevent unnecessary re-renders
+  const contextValue = useMemo<LearningContextType>(
+    () => ({
+      currentLesson,
+      lessonState,
+      isLoadingLesson,
+      skillTrees,
+      availableLessons,
+      unlockedLessons,
+      learningProgress,
+      completedLessons,
+      currentStreak,
+      recommendedLesson,
+      recommendedLessons,
+      insights,
+      currentSkillTree,
+      setCurrentSkillTree,
+      startLesson,
+      pauseLesson,
+      resumeLesson,
+      completeLesson,
+      exitLesson,
+      updateProgress,
+      addHint,
+      validateStep,
+      getLesson,
+      getLessonProgress,
+      getNextLesson,
+      checkUnlockRequirements,
+    }),
+    [
+      currentLesson,
+      lessonState,
+      isLoadingLesson,
+      skillTrees,
+      availableLessons,
+      unlockedLessons,
+      learningProgress,
+      completedLessons,
+      currentStreak,
+      recommendedLesson,
+      recommendedLessons,
+      insights,
+      currentSkillTree,
+      setCurrentSkillTree,
+      startLesson,
+      pauseLesson,
+      resumeLesson,
+      completeLesson,
+      exitLesson,
+      updateProgress,
+      addHint,
+      validateStep,
+      getLesson,
+      getLessonProgress,
+      getNextLesson,
+      checkUnlockRequirements,
+    ]
   );
+
+  return <LearningContext.Provider value={contextValue}>{children}</LearningContext.Provider>;
 }
 
+// Hook to access the LearningContext
 export function useLearning(): LearningContextType {
   const context = useContext(LearningContext);
   if (!context) {

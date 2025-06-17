@@ -153,7 +153,7 @@ export default function HomeScreen() {
   // FIXED: Safe achievements count with memoization
   const completedAchievements = useMemo(() => {
     try {
-      return userStats.achievements.filter(a => a.unlockedAt).length;
+      return userStats.achievements.filter((a: any) => a.unlockedAt).length;
     } catch (error) {
       console.error('❌ Error counting achievements:', error);
       return 0;

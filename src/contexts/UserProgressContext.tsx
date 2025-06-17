@@ -1,715 +1,818 @@
-import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
-import { UserProfile, UserProgress, Portfolio, Achievement, Artwork, Collection, UserProgressContextValue } from '../types';
-import { profileSystem } from '../engines/user/ProfileSystem';
-import { progressionSystem } from '../engines/user/ProgressionSystem';
-import { portfolioManager } from '../engines/user/PortfolioManager';
-import { EventBus } from '../engines/core/EventBus';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  ReactNode,
+  useMemo,
+  useRef,
+} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { errorHandler } from '../engines/core/ErrorHandler';
+import { EventBus } from '../engines/core/EventBus';
 
-interface UserProgressState {
-  user: UserProfile | null;
-  progress: UserProgress | null;
-  portfolio: Portfolio | null;
+// Storage keys for persistence
+const STORAGE_KEYS = {
+  USER_PROFILE: '@pikaso_user_profile',
+  USER_PROGRESS: '@pikaso_user_progress',
+  USER_ACHIEVEMENTS: '@pikaso_user_achievements',
+  USER_PORTFOLIO: '@pikaso_user_portfolio',
+  USER_STREAKS: '@pikaso_user_streaks',
+  USER_SETTINGS: '@pikaso_user_settings',
+} as const;
+
+// User profile and skill level definitions
+export type SkillLevel = 'beginner' | 'intermediate' | 'advanced';
+
+export interface UserProfile {
+  id: string;
+  email?: string;
+  displayName: string;
+  avatar?: string;
+  skillLevel: SkillLevel;
+  joinedDate: string;
+  lastActiveDate: string;
+  preferences: {
+    notifications: boolean;
+    darkMode: boolean;
+    autoSave: boolean;
+    hapticFeedback: boolean;
+  };
+}
+
+// Progress tracking interfaces
+export interface UserProgress {
+  totalXP: number;
+  currentLevel: number;
+  xpToNextLevel: number;
+  completedLessons: string[];
+  skillProgress: Record<string, number>; // skill -> progress percentage
+  totalDrawingTime: number; // in minutes
+  artworksCreated: number;
+  streakData: StreakData;
+}
+
+export interface StreakData {
+  currentStreak: number;
+  longestStreak: number;
+  lastActivityDate: string;
+  streakGoal: number;
+  weeklyGoal: number;
+  completedThisWeek: number;
+}
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlockedAt?: string;
+  progress: number;
+  maxProgress: number;
+  category: 'learning' | 'creation' | 'social' | 'streak' | 'milestone';
+  rarity: 'common' | 'rare' | 'epic' | 'legendary';
+  xpReward: number;
+}
+
+export interface PortfolioItem {
+  id: string;
+  title: string;
+  imageUri: string;
+  createdAt: string;
+  lessonId?: string;
+  tags: string[];
+  isPublic: boolean;
+  likes: number;
+  viewCount: number;
+  metadata: {
+    timeSpent: number; // in minutes
+    toolsUsed: string[];
+    skillsApplied: string[];
+  };
+}
+
+export interface UserStats {
+  totalLessonsCompleted: number;
+  totalXP: number;
+  currentLevel: number;
+  currentStreak: number;
+  totalDrawingTime: number;
+  artworksCreated: number;
+  achievementsUnlocked: number;
+  favoriteTool: string;
+  averageSessionTime: number;
+  weeklyProgress: number[];
+}
+
+// Context type definition
+export interface UserProgressContextType {
+  // User Profile
+  userProfile: UserProfile | null;
+  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  setSkillLevel: (level: SkillLevel) => Promise<void>;
+
+  // Progress & XP
+  userProgress: UserProgress | null;
+  addXP: (amount: number, source: string) => Promise<void>;
+  getCurrentLevel: () => number;
+  getXPProgress: () => { current: number; required: number; percentage: number };
+  
+  // Achievements
+  achievements: Achievement[];
+  unlockedAchievements: Achievement[];
+  checkAndUnlockAchievements: (action: string, data?: any) => Promise<Achievement[]>;
+  
+  // Portfolio
+  portfolio: PortfolioItem[];
+  addToPortfolio: (item: Omit<PortfolioItem, 'id' | 'createdAt'>) => Promise<void>;
+  updatePortfolioItem: (id: string, updates: Partial<PortfolioItem>) => Promise<void>;
+  deletePortfolioItem: (id: string) => Promise<void>;
+  
+  // Streaks & Habits
+  streakData: StreakData;
+  recordActivity: (activityType: string) => Promise<void>;
+  updateStreakGoal: (goal: number) => Promise<void>;
+  
+  // Statistics
+  userStats: UserStats;
+  updateDrawingTime: (minutes: number) => Promise<void>;
+  recordLessonCompletion: (lessonId: string, timeSpent: number) => Promise<void>;
+  
+  // Settings & Preferences
+  updatePreferences: (preferences: Partial<UserProfile['preferences']>) => Promise<void>;
+  
+  // State
   isLoading: boolean;
-  error: string | null;
+  isInitialized: boolean;
+  
+  // Actions
+  initialize: () => Promise<void>;
+  reset: () => Promise<void>;
+  exportData: () => Promise<string>;
 }
 
-type UserProgressAction =
-  | { type: 'SET_LOADING'; loading: boolean }
-  | { type: 'SET_ERROR'; error: string | null }
-  | { type: 'SET_USER'; user: UserProfile }
-  | { type: 'SET_PROGRESS'; progress: UserProgress }
-  | { type: 'SET_PORTFOLIO'; portfolio: Portfolio }
-  | { type: 'UPDATE_USER'; updates: Partial<UserProfile> }
-  | { type: 'UPDATE_PROGRESS'; updates: Partial<UserProgress> }
-  | { type: 'ADD_XP'; amount: number; source?: string }
-  | { type: 'ADD_ACHIEVEMENT'; achievement: Achievement }
-  | { type: 'UPDATE_STREAK'; streakDays: number }
-  | { type: 'ADD_ARTWORK'; artwork: Artwork }
-  | { type: 'UPDATE_ARTWORK'; artworkId: string; updates: Partial<Artwork> }
-  | { type: 'DELETE_ARTWORK'; artworkId: string }
-  | { type: 'ADD_COLLECTION'; collection: Collection };
+// Default values
+const createDefaultProfile = (): UserProfile => ({
+  id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+  displayName: 'Artist',
+  skillLevel: 'beginner',
+  joinedDate: new Date().toISOString(),
+  lastActiveDate: new Date().toISOString(),
+  preferences: {
+    notifications: true,
+    darkMode: false,
+    autoSave: true,
+    hapticFeedback: true,
+  },
+});
 
-const initialState: UserProgressState = {
-  user: null,
-  progress: null,
-  portfolio: null,
-  isLoading: false,
-  error: null,
-};
+const createDefaultProgress = (): UserProgress => ({
+  totalXP: 0,
+  currentLevel: 1,
+  xpToNextLevel: 100,
+  completedLessons: [],
+  skillProgress: {},
+  totalDrawingTime: 0,
+  artworksCreated: 0,
+  streakData: {
+    currentStreak: 0,
+    longestStreak: 0,
+    lastActivityDate: '',
+    streakGoal: 7,
+    weeklyGoal: 5,
+    completedThisWeek: 0,
+  },
+});
 
-function userProgressReducer(state: UserProgressState, action: UserProgressAction): UserProgressState {
-  switch (action.type) {
-    case 'SET_LOADING':
-      return { ...state, isLoading: action.loading };
-      
-    case 'SET_ERROR':
-      return { ...state, error: action.error, isLoading: false };
-      
-    case 'SET_USER':
-      return { ...state, user: action.user, error: null };
-      
-    case 'SET_PROGRESS':
-      return { ...state, progress: action.progress, error: null };
-      
-    case 'SET_PORTFOLIO':
-      return { ...state, portfolio: action.portfolio, error: null };
-      
-    case 'UPDATE_USER':
-      return {
-        ...state,
-        user: state.user ? { ...state.user, ...action.updates } : null,
-      };
-      
-    case 'UPDATE_PROGRESS':
-      return {
-        ...state,
-        progress: state.progress ? { ...state.progress, ...action.updates } : null,
-      };
-      
-    case 'ADD_XP':
-      if (!state.progress) return state;
-      
-      const newXP = state.progress.xp + action.amount;
-      const currentLevel = state.progress.level;
-      const xpPerLevel = 1000; // Base XP per level
-      const newLevel = Math.floor(newXP / xpPerLevel) + 1;
-      const xpToNextLevel = (newLevel * xpPerLevel) - newXP;
-      
-      return {
-        ...state,
-        progress: {
-          ...state.progress,
-          xp: newXP,
-          level: newLevel,
-          xpToNextLevel,
-          lastActivityDate: new Date().toISOString(),
-        },
-      };
-      
-    case 'ADD_ACHIEVEMENT':
-      if (!state.progress) return state;
-      
-      const existingAchievement = state.progress.achievements.find(a => a.id === action.achievement.id);
-      if (existingAchievement) return state;
-      
-      const unlockedAchievement = {
-        ...action.achievement,
-        unlockedAt: Date.now(),
-      };
-      
-      return {
-        ...state,
-        progress: {
-          ...state.progress,
-          achievements: [...state.progress.achievements, unlockedAchievement],
-          xp: state.progress.xp + action.achievement.xpReward,
-        },
-      };
-      
-    case 'UPDATE_STREAK':
-      return {
-        ...state,
-        progress: state.progress ? {
-          ...state.progress,
-          streakDays: action.streakDays,
-          lastActivityDate: new Date().toISOString(),
-        } : null,
-      };
-      
-    case 'ADD_ARTWORK':
-      if (!state.portfolio) return state;
-      
-      return {
-        ...state,
-        portfolio: {
-          ...state.portfolio,
-          artworks: [...state.portfolio.artworks, action.artwork],
-          stats: {
-            ...state.portfolio.stats,
-            totalArtworks: state.portfolio.stats.totalArtworks + 1,
-          },
-        },
-      };
-      
-    case 'UPDATE_ARTWORK':
-      if (!state.portfolio) return state;
-      
-      return {
-        ...state,
-        portfolio: {
-          ...state.portfolio,
-          artworks: state.portfolio.artworks.map(artwork =>
-            artwork.id === action.artworkId ? { ...artwork, ...action.updates } : artwork
-          ),
-        },
-      };
-      
-    case 'DELETE_ARTWORK':
-      if (!state.portfolio) return state;
-      
-      return {
-        ...state,
-        portfolio: {
-          ...state.portfolio,
-          artworks: state.portfolio.artworks.filter(artwork => artwork.id !== action.artworkId),
-          stats: {
-            ...state.portfolio.stats,
-            totalArtworks: Math.max(0, state.portfolio.stats.totalArtworks - 1),
-          },
-        },
-      };
-      
-    case 'ADD_COLLECTION':
-      if (!state.portfolio) return state;
-      
-      return {
-        ...state,
-        portfolio: {
-          ...state.portfolio,
-          collections: [...state.portfolio.collections, action.collection],
-        },
-      };
-      
-    default:
-      return state;
-  }
-}
+// XP calculation constants
+const XP_CONSTANTS = {
+  BASE_LEVEL_XP: 100,
+  LEVEL_MULTIPLIER: 1.5,
+  MAX_LEVEL: 100,
+} as const;
 
-const UserProgressContext = createContext<UserProgressContextValue | null>(null);
+// Achievement definitions
+const ACHIEVEMENT_DEFINITIONS: Achievement[] = [
+  {
+    id: 'first_lesson',
+    title: 'First Steps',
+    description: 'Complete your first lesson',
+    icon: '🎯',
+    progress: 0,
+    maxProgress: 1,
+    category: 'learning',
+    rarity: 'common',
+    xpReward: 50,
+  },
+  {
+    id: 'lesson_streak_7',
+    title: 'Weekly Warrior',
+    description: 'Complete lessons for 7 days in a row',
+    icon: '🔥',
+    progress: 0,
+    maxProgress: 7,
+    category: 'streak',
+    rarity: 'rare',
+    xpReward: 200,
+  },
+  {
+    id: 'first_artwork',
+    title: 'First Creation',
+    description: 'Create and save your first artwork',
+    icon: '🎨',
+    progress: 0,
+    maxProgress: 1,
+    category: 'creation',
+    rarity: 'common',
+    xpReward: 75,
+  },
+  {
+    id: 'level_10',
+    title: 'Rising Artist',
+    description: 'Reach level 10',
+    icon: '⭐',
+    progress: 0,
+    maxProgress: 10,
+    category: 'milestone',
+    rarity: 'epic',
+    xpReward: 500,
+  },
+  {
+    id: 'drawing_time_60',
+    title: 'Dedicated Artist',
+    description: 'Spend 60 minutes drawing',
+    icon: '⏰',
+    progress: 0,
+    maxProgress: 60,
+    category: 'creation',
+    rarity: 'rare',
+    xpReward: 300,
+  },
+];
 
-interface UserProgressProviderProps {
-  children: ReactNode;
-}
+// Context creation
+const UserProgressContext = createContext<UserProgressContextType | null>(null);
 
-export function UserProgressProvider({ children }: UserProgressProviderProps) {
-  const [state, dispatch] = useReducer(userProgressReducer, initialState);
+export function UserProgressProvider({ children }: { children: ReactNode }) {
   const eventBus = EventBus.getInstance();
+  
+  // State
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [userProgress, setUserProgress] = useState<UserProgress | null>(null);
+  const [achievements, setAchievements] = useState<Achievement[]>(ACHIEVEMENT_DEFINITIONS);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Refs for optimization
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Calculate XP required for level
+  const calculateXPForLevel = useCallback((level: number): number => {
+    if (level <= 1) return 0;
+    return Math.floor(XP_CONSTANTS.BASE_LEVEL_XP * Math.pow(XP_CONSTANTS.LEVEL_MULTIPLIER, level - 1));
+  }, []);
+  
+  // Calculate current level from total XP
+  const calculateLevelFromXP = useCallback((totalXP: number): number => {
+    let level = 1;
+    let requiredXP = 0;
+    
+    while (level < XP_CONSTANTS.MAX_LEVEL) {
+      const nextLevelXP = calculateXPForLevel(level + 1);
+      if (totalXP < nextLevelXP) break;
+      level++;
+      requiredXP = nextLevelXP;
+    }
+    
+    return level;
+  }, [calculateXPForLevel]);
 
-  // Initialize user data on mount
-  useEffect(() => {
-    initializeUserData();
+  // Derived values
+  const unlockedAchievements = useMemo(() => 
+    achievements.filter(achievement => achievement.unlockedAt)
+  , [achievements]);
+
+  const streakData = useMemo(() => 
+    userProgress?.streakData || createDefaultProgress().streakData
+  , [userProgress]);
+
+  const userStats = useMemo((): UserStats => {
+    if (!userProgress || !userProfile) {
+      return {
+        totalLessonsCompleted: 0,
+        totalXP: 0,
+        currentLevel: 1,
+        currentStreak: 0,
+        totalDrawingTime: 0,
+        artworksCreated: 0,
+        achievementsUnlocked: 0,
+        favoriteTool: 'brush',
+        averageSessionTime: 0,
+        weeklyProgress: [],
+      };
+    }
+
+    return {
+      totalLessonsCompleted: userProgress.completedLessons.length,
+      totalXP: userProgress.totalXP,
+      currentLevel: userProgress.currentLevel,
+      currentStreak: userProgress.streakData.currentStreak,
+      totalDrawingTime: userProgress.totalDrawingTime,
+      artworksCreated: userProgress.artworksCreated,
+      achievementsUnlocked: unlockedAchievements.length,
+      favoriteTool: 'brush', // TODO: Calculate from usage data
+      averageSessionTime: userProgress.totalDrawingTime / Math.max(1, userProgress.completedLessons.length),
+      weeklyProgress: [], // TODO: Calculate weekly progress
+    };
+  }, [userProgress, userProfile, unlockedAchievements]);
+
+  // Storage operations
+  const saveToStorage = useCallback(async (key: string, data: any) => {
+    try {
+      await AsyncStorage.setItem(key, JSON.stringify(data));
+    } catch (error) {
+      console.error(`Failed to save ${key}:`, error);
+      errorHandler.handleError(
+        errorHandler.createError('STORAGE_SAVE_ERROR', `Failed to save ${key}`, 'medium', error)
+      );
+    }
   }, []);
 
-  // Helper function to calculate XP to next level
-  const calculateXPToNextLevel = (level: number, currentXP: number): number => {
-    const xpForNextLevel = level * 1000; // Simple calculation
-    return Math.max(0, xpForNextLevel - currentXP);
-  };
-
-  const initializeUserData = async () => {
+  const loadFromStorage = useCallback(async (key: string): Promise<any | null> => {
     try {
-      dispatch({ type: 'SET_LOADING', loading: true });
-      
-      // Load or create user profile
-      const user = await profileSystem.getCurrentUser();
-      if (user) {
-        // Convert User to UserProfile format
-        const userProfile: UserProfile = {
-          id: user.id,
-          displayName: user.displayName,
-          email: user.email,
-          avatar: user.avatar,
-          joinedAt: user.createdAt.getTime(),
-          lastActiveAt: user.updatedAt.getTime(),
-          skillLevel: 'beginner', // Default skill level
-          learningGoals: [], // Default empty goals
-          preferences: {
-            theme: user.preferences.theme,
-            notifications: true, // Simplified for UserProfile
-            privacy: 'public', // Default privacy
-          },
-          stats: {
-            totalDrawingTime: user.stats.totalDrawingTime,
-            totalLessonsCompleted: user.stats.totalLessonsCompleted,
-            totalArtworksCreated: user.stats.totalArtworksCreated,
-            currentStreak: user.streakDays,
-            longestStreak: user.stats.longestStreak,
-          },
-        };
-        dispatch({ type: 'SET_USER', user: userProfile });
-        
-        // Create UserProgress from User data
-        const userProgress: UserProgress = {
-          userId: user.id,
-          level: user.level,
-          xp: user.xp,
-          xpToNextLevel: calculateXPToNextLevel(user.level, user.xp),
-          skillPoints: {
-            drawing: 0,
-            theory: 0,
-            creativity: 0,
-            technique: 0,
-          },
-          achievements: user.achievements,
-          streakDays: user.streakDays,
-          lastActivityDate: user.lastActiveDate.toISOString(),
-          learningStats: {
-            lessonsCompleted: user.stats.lessonsCompleted || user.stats.totalLessonsCompleted,
-            skillTreesCompleted: 0,
-            totalStudyTime: user.stats.totalDrawingTime,
-            averageSessionTime: user.stats.averageSessionTime || 0,
-            strongestSkills: [],
-            improvementAreas: [],
-          },
-        };
-        dispatch({ type: 'SET_PROGRESS', progress: userProgress });
-        
-        // Load portfolio
-        const portfolio = await portfolioManager.getUserPortfolio(user.id);
-        if (portfolio) {
-          // Ensure portfolio has all required properties
-          const completePortfolio: Portfolio = {
-            ...portfolio,
-            stats: {
-              ...portfolio.stats,
-              followerCount: portfolio.stats.followerCount || 0,
-              publicArtworks: portfolio.stats.publicArtworks || 0,
-              averageTimeSpent: portfolio.stats.averageTimeSpent || 0,
-            },
-          };
-          dispatch({ type: 'SET_PORTFOLIO', portfolio: completePortfolio });
-        }
-      }
-      
-      dispatch({ type: 'SET_LOADING', loading: false });
+      const data = await AsyncStorage.getItem(key);
+      return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error('Failed to initialize user data:', error);
-      dispatch({ type: 'SET_ERROR', error: 'Failed to load user data' });
+      console.error(`Failed to load ${key}:`, error);
+      return null;
     }
-  };
+  }, []);
 
-  // User management
-  const createUser = async (profile: Partial<UserProfile>): Promise<void> => {
+  // Debounced save function
+  const debouncedSave = useCallback((key: string, data: any) => {
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    saveTimeoutRef.current = setTimeout(() => {
+      saveToStorage(key, data);
+    }, 1000);
+  }, [saveToStorage]);
+
+  // Initialize user data
+  const initialize = useCallback(async () => {
     try {
-      dispatch({ type: 'SET_LOADING', loading: true });
-      
-      // Use correct method signature with required parameters
-      const newUser = await profileSystem.createUser(
-        profile.email || '',
-        profile.displayName || 'User',
-        profile.displayName || 'User'
+      setIsLoading(true);
+      console.log('🚀 Initializing user progress system...');
+
+      // Load user profile
+      let profile = await loadFromStorage(STORAGE_KEYS.USER_PROFILE);
+      if (!profile) {
+        profile = createDefaultProfile();
+        await saveToStorage(STORAGE_KEYS.USER_PROFILE, profile);
+      }
+      setUserProfile(profile);
+
+      // Load user progress
+      let progress = await loadFromStorage(STORAGE_KEYS.USER_PROGRESS);
+      if (!progress) {
+        progress = createDefaultProgress();
+        await saveToStorage(STORAGE_KEYS.USER_PROGRESS, progress);
+      }
+      setUserProgress(progress);
+
+      // Load achievements
+      const savedAchievements = await loadFromStorage(STORAGE_KEYS.USER_ACHIEVEMENTS);
+      if (savedAchievements) {
+        setAchievements(savedAchievements);
+      }
+
+      // Load portfolio
+      const savedPortfolio = await loadFromStorage(STORAGE_KEYS.USER_PORTFOLIO);
+      if (savedPortfolio) {
+        setPortfolio(savedPortfolio);
+      }
+
+      setIsInitialized(true);
+      console.log('✅ User progress system initialized');
+    } catch (error) {
+      console.error('❌ Failed to initialize user progress:', error);
+      errorHandler.handleError(
+        errorHandler.createError('USER_INIT_ERROR', 'Failed to initialize user progress', 'high', error)
       );
-      
-      // Convert User to UserProfile
-      const userProfile: UserProfile = {
-        id: newUser.id,
-        displayName: newUser.displayName,
-        email: newUser.email,
-        avatar: newUser.avatar,
-        joinedAt: newUser.createdAt.getTime(),
-        lastActiveAt: newUser.updatedAt.getTime(),
-        skillLevel: profile.skillLevel || 'beginner',
-        learningGoals: profile.learningGoals || [],
-        preferences: {
-          theme: profile.preferences?.theme || 'auto',
-          notifications: profile.preferences?.notifications || true,
-          privacy: profile.preferences?.privacy || 'public',
-        },
-        stats: {
-          totalDrawingTime: 0,
-          totalLessonsCompleted: 0,
-          totalArtworksCreated: 0,
-          currentStreak: 0,
-          longestStreak: 0,
-        },
-      };
-      dispatch({ type: 'SET_USER', user: userProfile });
-      
-      // Create initial progress
-      const initialProgress: UserProgress = {
-        userId: newUser.id,
-        level: 1,
-        xp: 0,
-        xpToNextLevel: 1000,
-        skillPoints: {
-          drawing: 0,
-          theory: 0,
-          creativity: 0,
-          technique: 0,
-        },
-        achievements: [],
-        streakDays: 0,
-        lastActivityDate: new Date().toISOString(),
-        learningStats: {
-          lessonsCompleted: 0,
-          skillTreesCompleted: 0,
-          totalStudyTime: 0,
-          averageSessionTime: 0,
-          strongestSkills: [],
-          improvementAreas: [],
-        },
-      };
-      dispatch({ type: 'SET_PROGRESS', progress: initialProgress });
-      
-      // Create initial portfolio
-      const initialPortfolio = await portfolioManager.createPortfolio(newUser.id);
-      // Ensure portfolio has all required properties
-      const completePortfolio: Portfolio = {
-        ...initialPortfolio,
-        stats: {
-          ...initialPortfolio.stats,
-          followerCount: 0, // Ensure followerCount is present
-          publicArtworks: 0,
-          averageTimeSpent: 0,
-        },
-      };
-      dispatch({ type: 'SET_PORTFOLIO', portfolio: completePortfolio });
-      
-      eventBus.emit('user:created', { user: newUser });
-      dispatch({ type: 'SET_LOADING', loading: false });
-    } catch (error) {
-      console.error('Failed to create user:', error);
-      dispatch({ type: 'SET_ERROR', error: 'Failed to create user account' });
-      throw error;
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [loadFromStorage, saveToStorage]);
 
-  const updateProfile = async (updates: Partial<UserProfile>): Promise<void> => {
-    if (!state.user) return;
-    
-    try {
-      // Use updateUser method (which exists in ProfileSystem)
-      const updatedUser = await profileSystem.updateUser({
-        displayName: updates.displayName,
-        avatar: updates.avatar,
-        // Convert UserProfile updates to User format
-      });
-      
-      if (updatedUser) {
-        const userProfile: UserProfile = {
-          ...state.user,
-          ...updates,
-          lastActiveAt: Date.now(),
-        };
-        dispatch({ type: 'SET_USER', user: userProfile });
-        eventBus.emit('user:updated', { user: userProfile });
-      }
-    } catch (error) {
-      console.error('Failed to update profile:', error);
-      dispatch({ type: 'SET_ERROR', error: 'Failed to update profile' });
-      throw error;
-    }
-  };
+  // Profile management
+  const updateProfile = useCallback(async (updates: Partial<UserProfile>) => {
+    if (!userProfile) return;
 
-  const deleteAccount = async (): Promise<void> => {
-    if (!state.user) return;
+    const updatedProfile = { ...userProfile, ...updates, lastActiveDate: new Date().toISOString() };
+    setUserProfile(updatedProfile);
+    debouncedSave(STORAGE_KEYS.USER_PROFILE, updatedProfile);
     
-    try {
-      await profileSystem.logout(); // Use existing logout method
-      dispatch({ type: 'SET_USER', user: null as any }); // Handle null assignment
-      dispatch({ type: 'SET_PROGRESS', progress: null as any }); // Handle null assignment
-      dispatch({ type: 'SET_PORTFOLIO', portfolio: null as any }); // Handle null assignment
-      eventBus.emit('user:deleted', { userId: state.user.id });
-    } catch (error) {
-      console.error('Failed to delete account:', error);
-      dispatch({ type: 'SET_ERROR', error: 'Failed to delete account' });
-      throw error;
-    }
-  };
+    eventBus.emit('user:profile_updated', { profile: updatedProfile });
+  }, [userProfile, debouncedSave]);
 
-  // Progress management
-  const addXP = (amount: number, source?: string) => {
-    dispatch({ type: 'ADD_XP', amount, source });
-    eventBus.emit('user:xpGained', { amount, source, newTotal: (state.progress?.xp || 0) + amount });
+  const setSkillLevel = useCallback(async (level: SkillLevel) => {
+    await updateProfile({ skillLevel: level });
+    eventBus.emit('user:skill_level_changed', { level });
+  }, [updateProfile]);
+
+  // XP and level management
+  const addXP = useCallback(async (amount: number, source: string) => {
+    if (!userProgress) return;
+
+    const newTotalXP = userProgress.totalXP + amount;
+    const newLevel = calculateLevelFromXP(newTotalXP);
+    const nextLevelXP = calculateXPForLevel(newLevel + 1);
     
+    const updatedProgress = {
+      ...userProgress,
+      totalXP: newTotalXP,
+      currentLevel: newLevel,
+      xpToNextLevel: nextLevelXP - newTotalXP,
+    };
+
+    setUserProgress(updatedProgress);
+    debouncedSave(STORAGE_KEYS.USER_PROGRESS, updatedProgress);
+
     // Check for level up
-    if (state.progress) {
-      const currentLevel = state.progress.level;
-      const newXP = state.progress.xp + amount;
-      const xpPerLevel = 1000;
-      const newLevel = Math.floor(newXP / xpPerLevel) + 1;
-      
-      if (newLevel > currentLevel) {
-        eventBus.emit('user:levelUp', { oldLevel: currentLevel, newLevel });
-        // Trigger level up achievement
-        addAchievement(`level_${newLevel}`);
+    if (newLevel > userProgress.currentLevel) {
+      eventBus.emit('user:level_up', { oldLevel: userProgress.currentLevel, newLevel, xpGained: amount });
+    }
+
+    eventBus.emit('user:xp_gained', { amount, source, totalXP: newTotalXP });
+    console.log(`🎯 XP gained: +${amount} from ${source} (Total: ${newTotalXP})`);
+  }, [userProgress, calculateLevelFromXP, calculateXPForLevel, debouncedSave]);
+
+  const getCurrentLevel = useCallback(() => {
+    return userProgress?.currentLevel || 1;
+  }, [userProgress]);
+
+  const getXPProgress = useCallback(() => {
+    if (!userProgress) {
+      return { current: 0, required: 100, percentage: 0 };
+    }
+
+    const currentLevelXP = calculateXPForLevel(userProgress.currentLevel);
+    const nextLevelXP = calculateXPForLevel(userProgress.currentLevel + 1);
+    const current = userProgress.totalXP - currentLevelXP;
+    const required = nextLevelXP - currentLevelXP;
+    const percentage = required > 0 ? (current / required) * 100 : 100;
+
+    return { current, required, percentage };
+  }, [userProgress, calculateXPForLevel]);
+
+  // Achievement system
+  const checkAndUnlockAchievements = useCallback(async (action: string, data?: any): Promise<Achievement[]> => {
+    const newlyUnlocked: Achievement[] = [];
+
+    const updatedAchievements = achievements.map(achievement => {
+      if (achievement.unlockedAt) return achievement; // Already unlocked
+
+      let shouldUpdate = false;
+      let newProgress = achievement.progress;
+
+      // Check achievement criteria
+      switch (achievement.id) {
+        case 'first_lesson':
+          if (action === 'lesson_completed') {
+            newProgress = 1;
+            shouldUpdate = true;
+          }
+          break;
+        case 'lesson_streak_7':
+          if (action === 'streak_updated' && data?.streak >= 7) {
+            newProgress = 7;
+            shouldUpdate = true;
+          }
+          break;
+        case 'first_artwork':
+          if (action === 'artwork_created') {
+            newProgress = 1;
+            shouldUpdate = true;
+          }
+          break;
+        case 'level_10':
+          if (action === 'level_up' && data?.newLevel >= 10) {
+            newProgress = 10;
+            shouldUpdate = true;
+          }
+          break;
+        case 'drawing_time_60':
+          if (action === 'drawing_time_updated' && data?.totalMinutes >= 60) {
+            newProgress = 60;
+            shouldUpdate = true;
+          }
+          break;
       }
-    }
-  };
 
-  const addAchievement = (achievementId: string) => {
-    // Use progressionSystem to unlock achievement
-    progressionSystem.unlockAchievement({
-      id: achievementId,
-      name: getAchievementName(achievementId),
-      title: getAchievementName(achievementId),
-      description: getAchievementDescription(achievementId),
-      icon: getAchievementIcon(achievementId),
-      iconUrl: getAchievementIcon(achievementId),
-      category: getAchievementCategory(achievementId),
-      requirements: { type: 'custom', value: 1 },
-      rarity: 'common',
-      xpReward: getAchievementXP(achievementId),
-      unlockedAt: Date.now(),
+      if (shouldUpdate && newProgress >= achievement.maxProgress) {
+        const unlockedAchievement = {
+          ...achievement,
+          progress: newProgress,
+          unlockedAt: new Date().toISOString(),
+        };
+        newlyUnlocked.push(unlockedAchievement);
+        return unlockedAchievement;
+      } else if (shouldUpdate) {
+        return { ...achievement, progress: newProgress };
+      }
+
+      return achievement;
     });
-  };
 
-  const updateStreak = () => {
-    if (!state.progress) return;
-    
-    const today = new Date().toDateString();
-    const lastActivity = new Date(state.progress.lastActivityDate).toDateString();
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toDateString();
-    
-    let newStreak = state.progress.streakDays;
-    
-    if (lastActivity === yesterday) {
-      // Continuing streak
-      newStreak += 1;
-    } else if (lastActivity !== today) {
-      // Streak broken
-      newStreak = 1;
+    if (newlyUnlocked.length > 0) {
+      setAchievements(updatedAchievements);
+      debouncedSave(STORAGE_KEYS.USER_ACHIEVEMENTS, updatedAchievements);
+
+      // Award XP for achievements
+      const totalXPReward = newlyUnlocked.reduce((sum, achievement) => sum + achievement.xpReward, 0);
+      if (totalXPReward > 0) {
+        await addXP(totalXPReward, 'achievement');
+      }
+
+      // Emit events
+      newlyUnlocked.forEach(achievement => {
+        eventBus.emit('user:achievement_unlocked', { achievement });
+      });
     }
-    // If lastActivity === today, no change needed
-    
-    dispatch({ type: 'UPDATE_STREAK', streakDays: newStreak });
-    
-    // Check streak achievements
-    if (newStreak === 7) addAchievement('week_streak');
-    if (newStreak === 30) addAchievement('month_streak');
-    if (newStreak === 100) addAchievement('legendary_streak');
-  };
 
-  const checkDailyStreak = () => {
-    updateStreak();
-  };
+    return newlyUnlocked;
+  }, [achievements, debouncedSave, addXP]);
 
   // Portfolio management
-  const saveArtwork = async (artwork: Omit<Artwork, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<string> => {
-    if (!state.user) throw new Error('User not logged in');
+  const addToPortfolio = useCallback(async (item: Omit<PortfolioItem, 'id' | 'createdAt'>) => {
+    const portfolioItem: PortfolioItem = {
+      ...item,
+      id: `artwork_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updatedPortfolio = [...portfolio, portfolioItem];
+    setPortfolio(updatedPortfolio);
+    debouncedSave(STORAGE_KEYS.USER_PORTFOLIO, updatedPortfolio);
+
+    // Update artwork count
+    if (userProgress) {
+      const updatedProgress = {
+        ...userProgress,
+        artworksCreated: userProgress.artworksCreated + 1,
+      };
+      setUserProgress(updatedProgress);
+      debouncedSave(STORAGE_KEYS.USER_PROGRESS, updatedProgress);
+    }
+
+    // Check achievements
+    await checkAndUnlockAchievements('artwork_created');
     
-    try {
-      const newArtwork = await portfolioManager.addArtwork(state.user.id, artwork);
-      dispatch({ type: 'ADD_ARTWORK', artwork: newArtwork });
-      eventBus.emit('artwork:created', { artwork: newArtwork });
-      
-      // Award achievement for first artwork
-      if (state.portfolio && state.portfolio.stats.totalArtworks === 0) {
-        addAchievement('first_artwork');
+    eventBus.emit('user:artwork_added', { artwork: portfolioItem });
+    console.log(`🎨 Added artwork to portfolio: ${portfolioItem.title}`);
+  }, [portfolio, userProgress, debouncedSave, checkAndUnlockAchievements]);
+
+  const updatePortfolioItem = useCallback(async (id: string, updates: Partial<PortfolioItem>) => {
+    const updatedPortfolio = portfolio.map(item => 
+      item.id === id ? { ...item, ...updates } : item
+    );
+    setPortfolio(updatedPortfolio);
+    debouncedSave(STORAGE_KEYS.USER_PORTFOLIO, updatedPortfolio);
+  }, [portfolio, debouncedSave]);
+
+  const deletePortfolioItem = useCallback(async (id: string) => {
+    const updatedPortfolio = portfolio.filter(item => item.id !== id);
+    setPortfolio(updatedPortfolio);
+    debouncedSave(STORAGE_KEYS.USER_PORTFOLIO, updatedPortfolio);
+    
+    eventBus.emit('user:artwork_deleted', { artworkId: id });
+  }, [portfolio, debouncedSave]);
+
+  // Streak and activity tracking
+  const recordActivity = useCallback(async (activityType: string) => {
+    if (!userProgress) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const lastActivityDate = userProgress.streakData.lastActivityDate.split('T')[0];
+    
+    let newStreakData = { ...userProgress.streakData };
+
+    if (lastActivityDate !== today) {
+      // New day activity
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+      if (lastActivityDate === yesterdayStr) {
+        // Continue streak
+        newStreakData.currentStreak += 1;
+      } else if (lastActivityDate !== '') {
+        // Streak broken
+        newStreakData.currentStreak = 1;
+      } else {
+        // First activity
+        newStreakData.currentStreak = 1;
       }
+
+      newStreakData.longestStreak = Math.max(newStreakData.longestStreak, newStreakData.currentStreak);
+      newStreakData.lastActivityDate = new Date().toISOString();
       
-      return newArtwork.id;
-    } catch (error) {
-      console.error('Failed to save artwork:', error);
-      throw error;
+      // Update weekly progress
+      const startOfWeek = new Date();
+      startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+      
+      if (new Date(lastActivityDate) < startOfWeek) {
+        newStreakData.completedThisWeek = 1;
+      } else {
+        newStreakData.completedThisWeek += 1;
+      }
+
+      const updatedProgress = {
+        ...userProgress,
+        streakData: newStreakData,
+      };
+
+      setUserProgress(updatedProgress);
+      debouncedSave(STORAGE_KEYS.USER_PROGRESS, updatedProgress);
+
+      // Check achievements
+      await checkAndUnlockAchievements('streak_updated', { streak: newStreakData.currentStreak });
+      
+      eventBus.emit('user:streak_updated', { streak: newStreakData.currentStreak });
     }
-  };
+  }, [userProgress, debouncedSave, checkAndUnlockAchievements]);
 
-  const updateArtwork = async (artworkId: string, updates: Partial<Artwork>): Promise<void> => {
-    if (!state.user) return;
-    
-    try {
-      await portfolioManager.updateArtwork(artworkId, updates);
-      dispatch({ type: 'UPDATE_ARTWORK', artworkId, updates });
-      eventBus.emit('artwork:updated', { artworkId, updates });
-    } catch (error) {
-      console.error('Failed to update artwork:', error);
-      throw error;
-    }
-  };
+  const updateStreakGoal = useCallback(async (goal: number) => {
+    if (!userProgress) return;
 
-  const deleteArtwork = async (artworkId: string): Promise<void> => {
-    if (!state.user) return;
-    
-    try {
-      await portfolioManager.deleteArtwork(artworkId);
-      dispatch({ type: 'DELETE_ARTWORK', artworkId });
-      eventBus.emit('artwork:deleted', { artworkId });
-    } catch (error) {
-      console.error('Failed to delete artwork:', error);
-      throw error;
-    }
-  };
-
-  const createCollection = async (collection: Omit<Collection, 'id' | 'userId' | 'createdAt' | 'updatedAt'>): Promise<string> => {
-    if (!state.user) throw new Error('User not logged in');
-    
-    try {
-      const newCollection = await portfolioManager.createCollection(state.user.id, collection);
-      dispatch({ type: 'ADD_COLLECTION', collection: newCollection });
-      eventBus.emit('collection:created', { collection: newCollection });
-      return newCollection.id;
-    } catch (error) {
-      console.error('Failed to create collection:', error);
-      throw error;
-    }
-  };
-
-  // Stats and analytics
-  const getDailyGoalProgress = (): number => {
-    // Calculate progress towards daily goal (e.g., XP gained today)
-    if (!state.progress) return 0;
-    
-    const today = new Date().toDateString();
-    const lastActivity = new Date(state.progress.lastActivityDate).toDateString();
-    
-    if (lastActivity === today) {
-      // Return progress based on some daily metric
-      return Math.min(100, (state.progress.xp % 100)); // Example: 100 XP daily goal
-    }
-    
-    return 0;
-  };
-
-  const getWeeklyStats = () => {
-    if (!state.progress) return null;
-    
-    return {
-      lessonsCompleted: state.progress.learningStats.lessonsCompleted,
-      totalStudyTime: state.progress.learningStats.totalStudyTime,
-      xpGained: state.progress.xp,
-      achievementsUnlocked: state.progress.achievements.length,
-      streakDays: state.progress.streakDays,
-    };
-  };
-
-  const getLearningInsights = () => {
-    if (!state.progress) return null;
-    
-    return {
-      strongestSkills: state.progress.learningStats.strongestSkills,
-      improvementAreas: state.progress.learningStats.improvementAreas,
-      averageSessionTime: state.progress.learningStats.averageSessionTime,
-      totalStudyTime: state.progress.learningStats.totalStudyTime,
-      recommendation: generateLearningRecommendation(),
-    };
-  };
-
-  // Add missing updateLearningStats method
-  const updateLearningStats = (category: string, stats: Record<string, number>) => {
-    if (!state.progress) return;
-    
-    const updates: Partial<UserProgress> = {
-      learningStats: {
-        ...state.progress.learningStats,
-        ...stats,
+    const updatedProgress = {
+      ...userProgress,
+      streakData: {
+        ...userProgress.streakData,
+        streakGoal: goal,
       },
-      lastActivityDate: new Date().toISOString(),
     };
+
+    setUserProgress(updatedProgress);
+    debouncedSave(STORAGE_KEYS.USER_PROGRESS, updatedProgress);
+  }, [userProgress, debouncedSave]);
+
+  // Activity tracking
+  const updateDrawingTime = useCallback(async (minutes: number) => {
+    if (!userProgress) return;
+
+    const updatedProgress = {
+      ...userProgress,
+      totalDrawingTime: userProgress.totalDrawingTime + minutes,
+    };
+
+    setUserProgress(updatedProgress);
+    debouncedSave(STORAGE_KEYS.USER_PROGRESS, updatedProgress);
+
+    // Check achievements
+    await checkAndUnlockAchievements('drawing_time_updated', { totalMinutes: updatedProgress.totalDrawingTime });
     
-    dispatch({ type: 'UPDATE_PROGRESS', updates });
-    eventBus.emit('user:learningStatsUpdated', { category, stats });
-  };
+    eventBus.emit('user:drawing_time_updated', { totalMinutes: updatedProgress.totalDrawingTime });
+  }, [userProgress, debouncedSave, checkAndUnlockAchievements]);
 
-  // Helper functions
-  const getAchievementName = (id: string): string => {
-    const names: Record<string, string> = {
-      'first_stroke': 'First Stroke',
-      'hundred_strokes': 'Century Mark',
-      'first_artwork': 'Creator',
-      'first_export': 'Publisher',
-      'first_share': 'Socialite',
-      'layer_master': 'Layer Master',
-      'week_streak': 'Week Warrior',
-      'month_streak': 'Monthly Master',
-      'legendary_streak': 'Legendary Learner',
-    };
-    return names[id] || 'Achievement';
-  };
+  const recordLessonCompletion = useCallback(async (lessonId: string, timeSpent: number) => {
+    if (!userProgress) return;
 
-  const getAchievementDescription = (id: string): string => {
-    const descriptions: Record<string, string> = {
-      'first_stroke': 'Made your first brush stroke',
-      'hundred_strokes': 'Completed 100 brush strokes',
-      'first_artwork': 'Created your first artwork',
-      'first_export': 'Exported your first artwork',
-      'first_share': 'Shared your first artwork',
-      'layer_master': 'Used 5 or more layers',
-      'week_streak': 'Maintained a 7-day learning streak',
-      'month_streak': 'Maintained a 30-day learning streak',
-      'legendary_streak': 'Maintained a 100-day learning streak',
-    };
-    return descriptions[id] || 'Achievement unlocked';
-  };
-
-  const getAchievementIcon = (id: string): string => {
-    const icons: Record<string, string> = {
-      'first_stroke': '🎨',
-      'hundred_strokes': '💯',
-      'first_artwork': '🖼️',
-      'first_export': '📤',
-      'first_share': '📱',
-      'layer_master': '📚',
-      'week_streak': '🔥',
-      'month_streak': '🏆',
-      'legendary_streak': '👑',
-    };
-    return icons[id] || '🏅';
-  };
-
-  const getAchievementCategory = (id: string): Achievement['category'] => {
-    if (id.includes('streak')) return 'streak';
-    if (id.includes('layer') || id.includes('stroke')) return 'skill';
-    if (id.includes('share') || id.includes('export')) return 'social';
-    return 'milestone';
-  };
-
-  const getAchievementXP = (id: string): number => {
-    const xpRewards: Record<string, number> = {
-      'first_stroke': 10,
-      'hundred_strokes': 50,
-      'first_artwork': 25,
-      'first_export': 15,
-      'first_share': 20,
-      'layer_master': 30,
-      'week_streak': 100,
-      'month_streak': 500,
-      'legendary_streak': 2000,
-    };
-    return xpRewards[id] || 10;
-  };
-
-  const generateLearningRecommendation = (): string => {
-    if (!state.progress) return 'Complete your profile to get recommendations';
+    const isNewLesson = !userProgress.completedLessons.includes(lessonId);
     
-    const { learningStats } = state.progress;
-    
-    if (learningStats.lessonsCompleted < 5) {
-      return 'Start with the Drawing Fundamentals skill tree';
+    if (isNewLesson) {
+      const updatedProgress = {
+        ...userProgress,
+        completedLessons: [...userProgress.completedLessons, lessonId],
+        totalDrawingTime: userProgress.totalDrawingTime + timeSpent,
+      };
+
+      setUserProgress(updatedProgress);
+      debouncedSave(STORAGE_KEYS.USER_PROGRESS, updatedProgress);
+
+      // Record daily activity
+      await recordActivity('lesson_completion');
+      
+      // Check achievements
+      await checkAndUnlockAchievements('lesson_completed');
+      
+      eventBus.emit('user:lesson_completed', { lessonId, timeSpent });
     }
-    
-    if (learningStats.averageSessionTime < 10) {
-      return 'Try to practice for at least 10 minutes per session';
-    }
-    
-    if (learningStats.improvementAreas.length > 0) {
-      return `Focus on improving: ${learningStats.improvementAreas.join(', ')}`;
-    }
-    
-    return 'Great progress! Keep practicing daily to maintain your streak';
-  };
+  }, [userProgress, debouncedSave, recordActivity, checkAndUnlockAchievements]);
 
-  const contextValue: UserProgressContextValue = {
-    user: state.user,
-    progress: state.progress,
-    portfolio: state.portfolio,
-    isLoading: state.isLoading,
-    error: state.error,
+  // Settings
+  const updatePreferences = useCallback(async (preferences: Partial<UserProfile['preferences']>) => {
+    if (!userProfile) return;
+
+    const updatedProfile = {
+      ...userProfile,
+      preferences: {
+        ...userProfile.preferences,
+        ...preferences,
+      },
+    };
+
+    setUserProfile(updatedProfile);
+    debouncedSave(STORAGE_KEYS.USER_PROFILE, updatedProfile);
     
-    // User management
-    createUser,
+    eventBus.emit('user:preferences_updated', { preferences: updatedProfile.preferences });
+  }, [userProfile, debouncedSave]);
+
+  // Utility functions
+  const reset = useCallback(async () => {
+    try {
+      await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
+      await initialize();
+      eventBus.emit('user:data_reset');
+    } catch (error) {
+      console.error('Failed to reset user data:', error);
+    }
+  }, [initialize]);
+
+  const exportData = useCallback(async (): Promise<string> => {
+    const data = {
+      profile: userProfile,
+      progress: userProgress,
+      achievements,
+      portfolio,
+      exportedAt: new Date().toISOString(),
+    };
+    return JSON.stringify(data, null, 2);
+  }, [userProfile, userProgress, achievements, portfolio]);
+
+  // Initialize on mount
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
+
+  // Cleanup
+  useEffect(() => {
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Context value
+  const contextValue = useMemo<UserProgressContextType>(() => ({
+    // User Profile
+    userProfile,
     updateProfile,
-    deleteAccount,
-    
-    // Progress management
+    setSkillLevel,
+
+    // Progress & XP
+    userProgress,
     addXP,
-    addAchievement,
-    updateStreak,
-    checkDailyStreak,
-    updateLearningStats, // Added missing method
-    
-    // Portfolio management
-    saveArtwork,
-    updateArtwork,
-    deleteArtwork,
-    createCollection,
-    
-    // Stats and analytics
-    getDailyGoalProgress,
-    getWeeklyStats,
-    getLearningInsights,
-  };
+    getCurrentLevel,
+    getXPProgress,
+
+    // Achievements
+    achievements,
+    unlockedAchievements,
+    checkAndUnlockAchievements,
+
+    // Portfolio
+    portfolio,
+    addToPortfolio,
+    updatePortfolioItem,
+    deletePortfolioItem,
+
+    // Streaks & Habits
+    streakData,
+    recordActivity,
+    updateStreakGoal,
+
+    // Statistics
+    userStats,
+    updateDrawingTime,
+    recordLessonCompletion,
+
+    // Settings & Preferences
+    updatePreferences,
+
+    // State
+    isLoading,
+    isInitialized,
+
+    // Actions
+    initialize,
+    reset,
+    exportData,
+  }), [
+    userProfile, updateProfile, setSkillLevel,
+    userProgress, addXP, getCurrentLevel, getXPProgress,
+    achievements, unlockedAchievements, checkAndUnlockAchievements,
+    portfolio, addToPortfolio, updatePortfolioItem, deletePortfolioItem,
+    streakData, recordActivity, updateStreakGoal,
+    userStats, updateDrawingTime, recordLessonCompletion,
+    updatePreferences,
+    isLoading, isInitialized,
+    initialize, reset, exportData,
+  ]);
 
   return (
     <UserProgressContext.Provider value={contextValue}>
@@ -718,7 +821,8 @@ export function UserProgressProvider({ children }: UserProgressProviderProps) {
   );
 }
 
-export function useUserProgress() {
+// Hooks
+export function useUserProgress(): UserProgressContextType {
   const context = useContext(UserProgressContext);
   if (!context) {
     throw new Error('useUserProgress must be used within a UserProgressProvider');
@@ -726,24 +830,21 @@ export function useUserProgress() {
   return context;
 }
 
-// Additional hook for progress-specific functionality
-export function useProgress() {
-  const { progress } = useUserProgress();
-  
-  return {
-    level: progress?.level || 1,
-    xp: progress?.xp || 0,
-    xpToNextLevel: progress?.xpToNextLevel || 1000,
-    xpProgress: progress ? Math.min(1, progress.xp / 1000) : 0, // Ensure 0-1 range
-    streakDays: progress?.streakDays || 0,
-    achievements: progress?.achievements || [],
-    learningStats: progress?.learningStats || {
-      lessonsCompleted: 0,
-      skillTreesCompleted: 0,
-      totalStudyTime: 0,
-      averageSessionTime: 0,
-      strongestSkills: [],
-      improvementAreas: [],
-    },
-  };
-}
+// Alternative hook name for backward compatibility
+export const useProgress = useUserProgress;
+
+// Export additional utilities
+export const XP_REQUIRED_FOR_LEVEL = (level: number): number => {
+  if (level <= 1) return 0;
+  return Math.floor(XP_CONSTANTS.BASE_LEVEL_XP * Math.pow(XP_CONSTANTS.LEVEL_MULTIPLIER, level - 1));
+};
+
+export const LEVEL_FROM_XP = (totalXP: number): number => {
+  let level = 1;
+  while (level < XP_CONSTANTS.MAX_LEVEL) {
+    const nextLevelXP = XP_REQUIRED_FOR_LEVEL(level + 1);
+    if (totalXP < nextLevelXP) break;
+    level++;
+  }
+  return level;
+};

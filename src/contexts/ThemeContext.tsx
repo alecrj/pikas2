@@ -1,52 +1,48 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { useColorScheme } from 'react-native';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
+import { useColorScheme, ColorSchemeName } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-/**
- * Theme Context - Manages app theme with professional color accuracy
- * Supports light, dark, and system themes with smooth transitions
- */
-
-interface Theme {
+// Theme type definitions
+export interface Theme {
   name: 'light' | 'dark';
   colors: {
     // Primary colors
     primary: string;
-    primaryLight: string;
     primaryDark: string;
+    primaryLight: string;
     secondary: string;
-    accent: string;
+    secondaryDark: string;
+    secondaryLight: string;
     
-    // Background colors
+    // Base colors
     background: string;
     surface: string;
-    card: string;
-    modal: string;
+    surfaceVariant: string;
     
     // Text colors
     text: string;
     textSecondary: string;
     textDisabled: string;
-    textInverse: string;
     
     // UI colors
     border: string;
     divider: string;
-    shadow: string;
     overlay: string;
     
-    // Status colors
+    // Semantic colors
     success: string;
     warning: string;
     error: string;
     info: string;
     
-    // Drawing specific
+    // Drawing specific colors
     canvas: string;
-    grid: string;
-    selection: string;
-    highlight: string;
+    canvasGrid: string;
+    brushPreview: string;
+    selectionStroke: string;
+    selectionFill: string;
   };
+  
   spacing: {
     xs: number;
     sm: number;
@@ -55,15 +51,7 @@ interface Theme {
     xl: number;
     xxl: number;
   };
-  typography: {
-    h1: { fontSize: number; fontWeight: string };
-    h2: { fontSize: number; fontWeight: string };
-    h3: { fontSize: number; fontWeight: string };
-    h4: { fontSize: number; fontWeight: string };
-    body: { fontSize: number; fontWeight: string };
-    caption: { fontSize: number; fontWeight: string };
-    button: { fontSize: number; fontWeight: string };
-  };
+  
   borderRadius: {
     sm: number;
     md: number;
@@ -71,47 +59,55 @@ interface Theme {
     xl: number;
     full: number;
   };
-  animation: {
-    fast: number;
-    normal: number;
-    slow: number;
+  
+  shadows: {
+    sm: any;
+    md: any;
+    lg: any;
+    xl: any;
   };
 }
 
 const lightTheme: Theme = {
   name: 'light',
   colors: {
+    // Primary colors
     primary: '#6366F1',
+    primaryDark: '#4338CA',
     primaryLight: '#818CF8',
-    primaryDark: '#4F46E5',
     secondary: '#EC4899',
-    accent: '#8B5CF6',
+    secondaryDark: '#DB2777',
+    secondaryLight: '#F472B6',
     
+    // Base colors
     background: '#FFFFFF',
     surface: '#F9FAFB',
-    card: '#FFFFFF',
-    modal: '#FFFFFF',
+    surfaceVariant: '#F3F4F6',
     
+    // Text colors
     text: '#111827',
     textSecondary: '#6B7280',
     textDisabled: '#9CA3AF',
-    textInverse: '#FFFFFF',
     
+    // UI colors
     border: '#E5E7EB',
-    divider: '#F3F4F6',
-    shadow: '#000000',
+    divider: '#D1D5DB',
     overlay: 'rgba(0, 0, 0, 0.5)',
     
+    // Semantic colors
     success: '#10B981',
     warning: '#F59E0B',
     error: '#EF4444',
     info: '#3B82F6',
     
+    // Drawing specific colors
     canvas: '#FFFFFF',
-    grid: '#F3F4F6',
-    selection: 'rgba(99, 102, 241, 0.2)',
-    highlight: 'rgba(236, 72, 153, 0.2)',
+    canvasGrid: 'rgba(0, 0, 0, 0.05)',
+    brushPreview: 'rgba(99, 102, 241, 0.3)',
+    selectionStroke: '#6366F1',
+    selectionFill: 'rgba(99, 102, 241, 0.1)',
   },
+  
   spacing: {
     xs: 4,
     sm: 8,
@@ -120,15 +116,7 @@ const lightTheme: Theme = {
     xl: 32,
     xxl: 48,
   },
-  typography: {
-    h1: { fontSize: 32, fontWeight: '700' },
-    h2: { fontSize: 24, fontWeight: '600' },
-    h3: { fontSize: 20, fontWeight: '600' },
-    h4: { fontSize: 18, fontWeight: '500' },
-    body: { fontSize: 16, fontWeight: '400' },
-    caption: { fontSize: 14, fontWeight: '400' },
-    button: { fontSize: 16, fontWeight: '500' },
-  },
+  
   borderRadius: {
     sm: 4,
     md: 8,
@@ -136,60 +124,125 @@ const lightTheme: Theme = {
     xl: 16,
     full: 9999,
   },
-  animation: {
-    fast: 150,
-    normal: 300,
-    slow: 500,
+  
+  shadows: {
+    sm: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    md: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    lg: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    xl: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.2,
+      shadowRadius: 16,
+      elevation: 8,
+    },
   },
 };
 
 const darkTheme: Theme = {
-  ...lightTheme,
   name: 'dark',
   colors: {
+    // Primary colors
     primary: '#818CF8',
-    primaryLight: '#A5B4FC',
     primaryDark: '#6366F1',
+    primaryLight: '#A5B4FC',
     secondary: '#F472B6',
-    accent: '#A78BFA',
+    secondaryDark: '#EC4899',
+    secondaryLight: '#F9A8D4',
     
-    background: '#111827',
-    surface: '#1F2937',
-    card: '#1F2937',
-    modal: '#1F2937',
+    // Base colors
+    background: '#0F172A',
+    surface: '#1E293B',
+    surfaceVariant: '#334155',
     
+    // Text colors
     text: '#F9FAFB',
-    textSecondary: '#D1D5DB',
-    textDisabled: '#6B7280',
-    textInverse: '#111827',
+    textSecondary: '#94A3B8',
+    textDisabled: '#64748B',
     
-    border: '#374151',
-    divider: '#1F2937',
-    shadow: '#000000',
+    // UI colors
+    border: '#334155',
+    divider: '#475569',
     overlay: 'rgba(0, 0, 0, 0.7)',
     
+    // Semantic colors
     success: '#34D399',
     warning: '#FBBF24',
     error: '#F87171',
     info: '#60A5FA',
     
-    canvas: '#1A1A1A',
-    grid: '#2A2A2A',
-    selection: 'rgba(129, 140, 248, 0.3)',
-    highlight: 'rgba(244, 114, 182, 0.3)',
+    // Drawing specific colors
+    canvas: '#1E293B',
+    canvasGrid: 'rgba(255, 255, 255, 0.05)',
+    brushPreview: 'rgba(129, 140, 248, 0.3)',
+    selectionStroke: '#818CF8',
+    selectionFill: 'rgba(129, 140, 248, 0.1)',
+  },
+  
+  spacing: lightTheme.spacing,
+  borderRadius: lightTheme.borderRadius,
+  
+  shadows: {
+    sm: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.3,
+      shadowRadius: 2,
+      elevation: 1,
+    },
+    md: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.4,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    lg: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.5,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    xl: {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.6,
+      shadowRadius: 16,
+      elevation: 8,
+    },
   },
 };
 
+// FIXED: Updated interface to include spacing, borderRadius, and shadows
 interface ThemeContextValue {
   theme: Theme;
-  themeMode: 'light' | 'dark' | 'system';
-  setThemeMode: (mode: 'light' | 'dark' | 'system') => void;
-  toggleTheme: () => void;
   colors: Theme['colors'];
   spacing: Theme['spacing'];
-  typography: Theme['typography'];
   borderRadius: Theme['borderRadius'];
-  animation: Theme['animation'];
+  shadows: Theme['shadows'];
+  isDark: boolean;
+  toggleTheme: () => void;
+  setThemeMode: (mode: 'light' | 'dark' | 'system') => void;
+  themeMode: 'light' | 'dark' | 'system';
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
@@ -199,19 +252,21 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [themeMode, setThemeModeState] = useState<'light' | 'dark' | 'system'>('system');
   const [theme, setTheme] = useState<Theme>(lightTheme);
 
+  // Load saved theme preference
   useEffect(() => {
     loadThemePreference();
   }, []);
 
+  // Update theme when mode or system theme changes
   useEffect(() => {
     updateTheme();
   }, [themeMode, systemColorScheme]);
 
   const loadThemePreference = async () => {
     try {
-      const savedTheme = await AsyncStorage.getItem('theme_preference');
-      if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
-        setThemeModeState(savedTheme as 'light' | 'dark' | 'system');
+      const savedThemeMode = await AsyncStorage.getItem('@pikaso_theme_mode');
+      if (savedThemeMode && ['light', 'dark', 'system'].includes(savedThemeMode)) {
+        setThemeModeState(savedThemeMode as 'light' | 'dark' | 'system');
       }
     } catch (error) {
       console.error('Failed to load theme preference:', error);
@@ -230,31 +285,39 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setTheme(selectedTheme);
   };
 
-  const setThemeMode = async (mode: 'light' | 'dark' | 'system') => {
-    setThemeModeState(mode);
+  const toggleTheme = async () => {
+    const newMode = theme.name === 'light' ? 'dark' : 'light';
+    setThemeModeState(newMode);
+    
     try {
-      await AsyncStorage.setItem('theme_preference', mode);
+      await AsyncStorage.setItem('@pikaso_theme_mode', newMode);
     } catch (error) {
       console.error('Failed to save theme preference:', error);
     }
   };
 
-  const toggleTheme = () => {
-    const newMode = theme.name === 'light' ? 'dark' : 'light';
-    setThemeMode(newMode);
+  const setThemeMode = async (mode: 'light' | 'dark' | 'system') => {
+    setThemeModeState(mode);
+    
+    try {
+      await AsyncStorage.setItem('@pikaso_theme_mode', mode);
+    } catch (error) {
+      console.error('Failed to save theme preference:', error);
+    }
   };
 
-  const value: ThemeContextValue = {
+  // FIXED: Updated value to include spacing, borderRadius, and shadows
+  const value = useMemo<ThemeContextValue>(() => ({
     theme,
-    themeMode,
-    setThemeMode,
-    toggleTheme,
     colors: theme.colors,
     spacing: theme.spacing,
-    typography: theme.typography,
     borderRadius: theme.borderRadius,
-    animation: theme.animation,
-  };
+    shadows: theme.shadows,
+    isDark: theme.name === 'dark',
+    toggleTheme,
+    setThemeMode,
+    themeMode,
+  }), [theme, themeMode]);
 
   return (
     <ThemeContext.Provider value={value}>
@@ -263,17 +326,23 @@ export const ThemeProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   );
 };
 
-export const useTheme = (): ThemeContextValue => {
+export function useTheme(): ThemeContextValue {
   const context = useContext(ThemeContext);
   if (!context) {
     throw new Error('useTheme must be used within a ThemeProvider');
   }
   return context;
+}
+
+// Export additional theme utilities
+export const getTheme = (mode: 'light' | 'dark'): Theme => {
+  return mode === 'dark' ? darkTheme : lightTheme;
 };
 
-// Styled component helper
-export const themed = {
-  View: (styles: any) => styles,
-  Text: (styles: any) => styles,
-  // Add more as needed
+export const themes = {
+  light: lightTheme,
+  dark: darkTheme,
 };
+
+// Re-export for backward compatibility
+export default ThemeProvider;

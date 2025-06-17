@@ -239,7 +239,7 @@ export default function ProfileScreen() {
           </View>
         ) : (
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {recentAchievements.map((achievement, index) => (
+            {recentAchievements.map((achievement: any, index: number) => (
               <View
                 key={achievement.id}
                 style={[styles.achievementCard, { backgroundColor: theme.colors.surface }]}

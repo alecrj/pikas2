@@ -1,3 +1,4 @@
+// app/onboarding.tsx - PRODUCTION GRADE FIXED VERSION
 import React, { useState } from 'react';
 import {
   View,
@@ -23,6 +24,7 @@ import * as Haptics from 'expo-haptics';
 import { useTheme } from '../src/contexts/ThemeContext';
 import { useUserProgress } from '../src/contexts/UserProgressContext';
 import { NavigationDebugger, ContextDebugger, useDebugMount } from '../src/utils/DebugUtils';
+import { SkillLevel } from '../src/types/index'; // FIXED: Import SkillLevel type
 import {
   Palette,
   BookOpen,
@@ -79,13 +81,24 @@ const onboardingSteps: OnboardingStep[] = [
   },
 ];
 
-const skillLevels = [
+// FIXED: Skill levels with proper SkillLevel type mapping
+interface SkillLevelOption {
+  id: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  recommended: boolean;
+  skillLevel: SkillLevel; // FIXED: Map to proper SkillLevel type
+}
+
+const skillLevels: SkillLevelOption[] = [
   {
     id: 'beginner',
     title: 'Complete Beginner',
     subtitle: 'I\'ve never drawn before',
     description: 'Start with the absolute basics: holding a pencil, drawing lines, and simple shapes.',
     recommended: true,
+    skillLevel: 'beginner', // FIXED: Maps to valid SkillLevel
   },
   {
     id: 'some-experience',
@@ -93,6 +106,7 @@ const skillLevels = [
     subtitle: 'I can draw basic shapes',
     description: 'You know the basics but want to improve your technique and learn new skills.',
     recommended: false,
+    skillLevel: 'intermediate', // FIXED: Maps 'some-experience' to 'intermediate'
   },
   {
     id: 'intermediate',
@@ -100,6 +114,7 @@ const skillLevels = [
     subtitle: 'I can draw recognizable objects',
     description: 'You have drawing experience and want to refine your skills and learn advanced techniques.',
     recommended: false,
+    skillLevel: 'advanced', // FIXED: Maps to 'advanced' for consistency
   },
 ];
 
@@ -115,7 +130,7 @@ export default function OnboardingScreen() {
   const theme = useTheme();
   const { createUser, user } = useUserProgress();
   const [currentStep, setCurrentStep] = useState(0);
-  const [selectedSkillLevel, setSelectedSkillLevel] = useState('beginner');
+  const [selectedSkillLevel, setSelectedSkillLevel] = useState('beginner'); // UI selection
   const [selectedGoals, setSelectedGoals] = useState<string[]>(['hobby']);
   const [userName, setUserName] = useState('');
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -159,6 +174,12 @@ export default function OnboardingScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
+  // FIXED: Get the actual SkillLevel type for the selected option
+  const getSelectedSkillLevelType = (): SkillLevel => {
+    const selectedOption = skillLevels.find(level => level.id === selectedSkillLevel);
+    return selectedOption?.skillLevel || 'beginner';
+  };
+
   const completeOnboarding = async () => {
     if (isCreatingUser) {
       NavigationDebugger.log('User creation already in progress');
@@ -169,15 +190,15 @@ export default function OnboardingScreen() {
       setIsCreatingUser(true);
       NavigationDebugger.log('Starting user creation', {
         displayName: userName || 'New Artist',
-        skillLevel: selectedSkillLevel,
+        skillLevel: getSelectedSkillLevelType(), // FIXED: Use proper SkillLevel type
         goals: selectedGoals,
       });
 
-      // Create user profile with onboarding data
+      // FIXED: Create user profile with proper SkillLevel type
       await createUser({
         displayName: userName || 'New Artist',
         email: `${(userName || 'newartist').toLowerCase().replace(/\s+/g, '')}@pikaso.app`,
-        skillLevel: selectedSkillLevel,
+        skillLevel: getSelectedSkillLevelType(), // FIXED: Use proper SkillLevel type
         learningGoals: selectedGoals,
       });
       
