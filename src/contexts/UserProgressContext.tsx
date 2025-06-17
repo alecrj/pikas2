@@ -25,7 +25,7 @@ const STORAGE_KEYS = {
 // User profile and skill level definitions
 export type SkillLevel = 'beginner' | 'intermediate' | 'advanced';
 
-export interface UserProfile {
+export interface User {
   id: string;
   email?: string;
   displayName: string;
@@ -64,6 +64,7 @@ export interface StreakData {
 
 export interface Achievement {
   id: string;
+  name: string;
   title: string;
   description: string;
   icon: string;
@@ -78,45 +79,72 @@ export interface Achievement {
 export interface PortfolioItem {
   id: string;
   title: string;
+  description?: string;
   imageUri: string;
-  createdAt: string;
+  createdAt: number;
   lessonId?: string;
+  challengeId?: string;
   tags: string[];
   isPublic: boolean;
   likes: number;
   viewCount: number;
+  stats: {
+    likes: number;
+    views: number;
+    comments: number;
+    shares: number;
+  };
   metadata: {
     timeSpent: number; // in minutes
     toolsUsed: string[];
     skillsApplied: string[];
   };
+  visibility: 'public' | 'private';
+  featured: boolean;
 }
 
-export interface UserStats {
-  totalLessonsCompleted: number;
-  totalXP: number;
-  currentLevel: number;
-  currentStreak: number;
-  totalDrawingTime: number;
-  artworksCreated: number;
-  achievementsUnlocked: number;
-  favoriteTool: string;
-  averageSessionTime: number;
+export interface LearningStats {
+  lessonsCompleted: number;
+  totalStudyTime: number; // in minutes
+  averageSessionLength: number;
+  strongestSkills: string[];
+  improvementAreas: string[];
   weeklyProgress: number[];
+  monthlyProgress: number[];
 }
 
-// Context type definition
+// Legacy progress interface for backward compatibility
+export interface Progress {
+  level: number;
+  xp: number;
+  xpToNextLevel: number;
+  xpProgress: number;
+  streakDays: number;
+  achievements: Achievement[];
+}
+
+// Context type definition - matching component expectations
 export interface UserProgressContextType {
-  // User Profile
-  userProfile: UserProfile | null;
-  updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
+  // User Profile (using "user" as expected by components)
+  user: User | null;
+  userProfile: User | null; // alias for compatibility
+  updateProfile: (updates: Partial<User>) => Promise<void>;
   setSkillLevel: (level: SkillLevel) => Promise<void>;
+  createUser: (userData: Partial<User> & { skillLevel: SkillLevel }) => Promise<void>;
 
   // Progress & XP
   userProgress: UserProgress | null;
-  addXP: (amount: number, source: string) => Promise<void>;
+  progress: Progress | null; // Legacy format expected by components
+  addXP: (amount: number, source?: string) => Promise<void>; // Optional source for compatibility
   getCurrentLevel: () => number;
   getXPProgress: () => { current: number; required: number; percentage: number };
+  
+  // Legacy progress properties for backward compatibility
+  level: number;
+  xp: number;
+  xpToNextLevel: number;
+  xpProgress: number;
+  streakDays: number;
   
   // Achievements
   achievements: Achievement[];
@@ -133,14 +161,17 @@ export interface UserProgressContextType {
   streakData: StreakData;
   recordActivity: (activityType: string) => Promise<void>;
   updateStreakGoal: (goal: number) => Promise<void>;
+  getDailyGoalProgress: () => number;
+  checkDailyStreak: () => Promise<void>;
   
-  // Statistics
-  userStats: UserStats;
+  // Statistics & Learning
+  learningStats: LearningStats;
   updateDrawingTime: (minutes: number) => Promise<void>;
   recordLessonCompletion: (lessonId: string, timeSpent: number) => Promise<void>;
+  updateLearningStats: (category: string, data: any) => Promise<void>;
   
   // Settings & Preferences
-  updatePreferences: (preferences: Partial<UserProfile['preferences']>) => Promise<void>;
+  updatePreferences: (preferences: Partial<User['preferences']>) => Promise<void>;
   
   // State
   isLoading: boolean;
@@ -153,7 +184,7 @@ export interface UserProgressContextType {
 }
 
 // Default values
-const createDefaultProfile = (): UserProfile => ({
+const createDefaultUser = (): User => ({
   id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
   displayName: 'Artist',
   skillLevel: 'beginner',
@@ -185,6 +216,16 @@ const createDefaultProgress = (): UserProgress => ({
   },
 });
 
+const createDefaultLearningStats = (): LearningStats => ({
+  lessonsCompleted: 0,
+  totalStudyTime: 0,
+  averageSessionLength: 0,
+  strongestSkills: [],
+  improvementAreas: [],
+  weeklyProgress: [0, 0, 0, 0, 0, 0, 0],
+  monthlyProgress: Array(30).fill(0),
+});
+
 // XP calculation constants
 const XP_CONSTANTS = {
   BASE_LEVEL_XP: 100,
@@ -196,6 +237,7 @@ const XP_CONSTANTS = {
 const ACHIEVEMENT_DEFINITIONS: Achievement[] = [
   {
     id: 'first_lesson',
+    name: 'First Steps',
     title: 'First Steps',
     description: 'Complete your first lesson',
     icon: '🎯',
@@ -207,6 +249,7 @@ const ACHIEVEMENT_DEFINITIONS: Achievement[] = [
   },
   {
     id: 'lesson_streak_7',
+    name: 'Weekly Warrior',
     title: 'Weekly Warrior',
     description: 'Complete lessons for 7 days in a row',
     icon: '🔥',
@@ -218,6 +261,7 @@ const ACHIEVEMENT_DEFINITIONS: Achievement[] = [
   },
   {
     id: 'first_artwork',
+    name: 'First Creation',
     title: 'First Creation',
     description: 'Create and save your first artwork',
     icon: '🎨',
@@ -229,6 +273,7 @@ const ACHIEVEMENT_DEFINITIONS: Achievement[] = [
   },
   {
     id: 'level_10',
+    name: 'Rising Artist',
     title: 'Rising Artist',
     description: 'Reach level 10',
     icon: '⭐',
@@ -240,6 +285,7 @@ const ACHIEVEMENT_DEFINITIONS: Achievement[] = [
   },
   {
     id: 'drawing_time_60',
+    name: 'Dedicated Artist',
     title: 'Dedicated Artist',
     description: 'Spend 60 minutes drawing',
     icon: '⏰',
@@ -258,10 +304,11 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
   const eventBus = EventBus.getInstance();
   
   // State
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [userProgress, setUserProgress] = useState<UserProgress | null>(null);
   const [achievements, setAchievements] = useState<Achievement[]>(ACHIEVEMENT_DEFINITIONS);
   const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [learningStats, setLearningStats] = useState<LearningStats>(createDefaultLearningStats());
   const [isLoading, setIsLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   
@@ -298,35 +345,31 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
     userProgress?.streakData || createDefaultProgress().streakData
   , [userProgress]);
 
-  const userStats = useMemo((): UserStats => {
-    if (!userProgress || !userProfile) {
-      return {
-        totalLessonsCompleted: 0,
-        totalXP: 0,
-        currentLevel: 1,
-        currentStreak: 0,
-        totalDrawingTime: 0,
-        artworksCreated: 0,
-        achievementsUnlocked: 0,
-        favoriteTool: 'brush',
-        averageSessionTime: 0,
-        weeklyProgress: [],
-      };
-    }
-
+  // Legacy progress format for backward compatibility
+  const progress = useMemo((): Progress | null => {
+    if (!userProgress) return null;
+    
+    const currentLevelXP = calculateXPForLevel(userProgress.currentLevel);
+    const nextLevelXP = calculateXPForLevel(userProgress.currentLevel + 1);
+    const currentProgress = userProgress.totalXP - currentLevelXP;
+    const requiredProgress = nextLevelXP - currentLevelXP;
+    
     return {
-      totalLessonsCompleted: userProgress.completedLessons.length,
-      totalXP: userProgress.totalXP,
-      currentLevel: userProgress.currentLevel,
-      currentStreak: userProgress.streakData.currentStreak,
-      totalDrawingTime: userProgress.totalDrawingTime,
-      artworksCreated: userProgress.artworksCreated,
-      achievementsUnlocked: unlockedAchievements.length,
-      favoriteTool: 'brush', // TODO: Calculate from usage data
-      averageSessionTime: userProgress.totalDrawingTime / Math.max(1, userProgress.completedLessons.length),
-      weeklyProgress: [], // TODO: Calculate weekly progress
+      level: userProgress.currentLevel,
+      xp: userProgress.totalXP,
+      xpToNextLevel: userProgress.xpToNextLevel,
+      xpProgress: requiredProgress > 0 ? currentProgress / requiredProgress : 1,
+      streakDays: userProgress.streakData.currentStreak,
+      achievements: unlockedAchievements,
     };
-  }, [userProgress, userProfile, unlockedAchievements]);
+  }, [userProgress, unlockedAchievements, calculateXPForLevel]);
+
+  // Individual legacy properties
+  const level = useMemo(() => progress?.level || 1, [progress]);
+  const xp = useMemo(() => progress?.xp || 0, [progress]);
+  const xpToNextLevel = useMemo(() => progress?.xpToNextLevel || 100, [progress]);
+  const xpProgress = useMemo(() => progress?.xpProgress || 0, [progress]);
+  const streakDays = useMemo(() => progress?.streakDays || 0, [progress]);
 
   // Storage operations
   const saveToStorage = useCallback(async (key: string, data: any) => {
@@ -368,20 +411,16 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
       console.log('🚀 Initializing user progress system...');
 
       // Load user profile
-      let profile = await loadFromStorage(STORAGE_KEYS.USER_PROFILE);
-      if (!profile) {
-        profile = createDefaultProfile();
-        await saveToStorage(STORAGE_KEYS.USER_PROFILE, profile);
+      let userData = await loadFromStorage(STORAGE_KEYS.USER_PROFILE);
+      if (userData) {
+        setUser(userData);
       }
-      setUserProfile(profile);
 
       // Load user progress
-      let progress = await loadFromStorage(STORAGE_KEYS.USER_PROGRESS);
-      if (!progress) {
-        progress = createDefaultProgress();
-        await saveToStorage(STORAGE_KEYS.USER_PROGRESS, progress);
+      let progressData = await loadFromStorage(STORAGE_KEYS.USER_PROGRESS);
+      if (progressData) {
+        setUserProgress(progressData);
       }
-      setUserProgress(progress);
 
       // Load achievements
       const savedAchievements = await loadFromStorage(STORAGE_KEYS.USER_ACHIEVEMENTS);
@@ -395,6 +434,12 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
         setPortfolio(savedPortfolio);
       }
 
+      // Load learning stats
+      const savedLearningStats = await loadFromStorage('learning_stats');
+      if (savedLearningStats) {
+        setLearningStats(savedLearningStats);
+      }
+
       setIsInitialized(true);
       console.log('✅ User progress system initialized');
     } catch (error) {
@@ -405,26 +450,56 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [loadFromStorage, saveToStorage]);
+  }, [loadFromStorage]);
+
+  // Create user
+  const createUser = useCallback(async (userData: Partial<User> & { skillLevel: SkillLevel, learningGoals?: string[] }) => {
+    try {
+      const newUser = {
+        ...createDefaultUser(),
+        ...userData,
+        id: `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        joinedDate: new Date().toISOString(),
+        lastActiveDate: new Date().toISOString(),
+      };
+
+      const newProgress = createDefaultProgress();
+      const newStats = createDefaultLearningStats();
+
+      await saveToStorage(STORAGE_KEYS.USER_PROFILE, newUser);
+      await saveToStorage(STORAGE_KEYS.USER_PROGRESS, newProgress);
+      await saveToStorage('learning_stats', newStats);
+
+      setUser(newUser);
+      setUserProgress(newProgress);
+      setLearningStats(newStats);
+
+      eventBus.emit('user:created', { user: newUser });
+      console.log('✅ User created successfully:', newUser.displayName);
+    } catch (error) {
+      console.error('❌ Failed to create user:', error);
+      throw error;
+    }
+  }, [saveToStorage]);
 
   // Profile management
-  const updateProfile = useCallback(async (updates: Partial<UserProfile>) => {
-    if (!userProfile) return;
+  const updateProfile = useCallback(async (updates: Partial<User>) => {
+    if (!user) return;
 
-    const updatedProfile = { ...userProfile, ...updates, lastActiveDate: new Date().toISOString() };
-    setUserProfile(updatedProfile);
-    debouncedSave(STORAGE_KEYS.USER_PROFILE, updatedProfile);
+    const updatedUser = { ...user, ...updates, lastActiveDate: new Date().toISOString() };
+    setUser(updatedUser);
+    debouncedSave(STORAGE_KEYS.USER_PROFILE, updatedUser);
     
-    eventBus.emit('user:profile_updated', { profile: updatedProfile });
-  }, [userProfile, debouncedSave]);
+    eventBus.emit('user:profile_updated', { profile: updatedUser });
+  }, [user, debouncedSave]);
 
-  const setSkillLevel = useCallback(async (level: SkillLevel) => {
-    await updateProfile({ skillLevel: level });
-    eventBus.emit('user:skill_level_changed', { level });
+  const setSkillLevel = useCallback(async (skillLevel: SkillLevel) => {
+    await updateProfile({ skillLevel });
+    eventBus.emit('user:skill_level_changed', { level: skillLevel });
   }, [updateProfile]);
 
   // XP and level management
-  const addXP = useCallback(async (amount: number, source: string) => {
+  const addXP = useCallback(async (amount: number, source: string = 'general') => {
     if (!userProgress) return;
 
     const newTotalXP = userProgress.totalXP + amount;
@@ -467,6 +542,30 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
 
     return { current, required, percentage };
   }, [userProgress, calculateXPForLevel]);
+
+  // Daily goal and streak management
+  const getDailyGoalProgress = useCallback(() => {
+    if (!userProgress || !learningStats) return 0;
+    
+    const today = new Date().toISOString().split('T')[0];
+    const todayIndex = new Date().getDay();
+    const todayProgress = learningStats.weeklyProgress[todayIndex] || 0;
+    const dailyGoal = userProgress.streakData.weeklyGoal / 7; // Convert weekly to daily
+    
+    return Math.min(100, (todayProgress / Math.max(1, dailyGoal)) * 100);
+  }, [userProgress, learningStats]);
+
+  const checkDailyStreak = useCallback(async () => {
+    if (!userProgress) return;
+
+    const today = new Date().toISOString().split('T')[0];
+    const lastActivityDate = userProgress.streakData.lastActivityDate?.split('T')[0];
+    
+    if (lastActivityDate !== today) {
+      // Could update streak here if needed
+      console.log('📅 Daily streak checked');
+    }
+  }, [userProgress]);
 
   // Achievement system
   const checkAndUnlockAchievements = useCallback(async (action: string, data?: any): Promise<Achievement[]> => {
@@ -551,7 +650,8 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
     const portfolioItem: PortfolioItem = {
       ...item,
       id: `artwork_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      createdAt: new Date().toISOString(),
+      createdAt: Date.now(),
+      stats: item.stats || { likes: 0, views: 0, comments: 0, shares: 0 },
     };
 
     const updatedPortfolio = [...portfolio, portfolioItem];
@@ -693,6 +793,15 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
       setUserProgress(updatedProgress);
       debouncedSave(STORAGE_KEYS.USER_PROGRESS, updatedProgress);
 
+      // Update learning stats
+      const updatedStats = {
+        ...learningStats,
+        lessonsCompleted: learningStats.lessonsCompleted + 1,
+        totalStudyTime: learningStats.totalStudyTime + timeSpent,
+      };
+      setLearningStats(updatedStats);
+      debouncedSave('learning_stats', updatedStats);
+
       // Record daily activity
       await recordActivity('lesson_completion');
       
@@ -701,47 +810,73 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
       
       eventBus.emit('user:lesson_completed', { lessonId, timeSpent });
     }
-  }, [userProgress, debouncedSave, recordActivity, checkAndUnlockAchievements]);
+  }, [userProgress, learningStats, debouncedSave, recordActivity, checkAndUnlockAchievements]);
+
+  const updateLearningStats = useCallback(async (category: string, data: any) => {
+    const updatedStats = {
+      ...learningStats,
+      ...data,
+    };
+    
+    if (data.lessonsCompleted) {
+      updatedStats.lessonsCompleted += data.lessonsCompleted;
+    }
+    
+    if (data.totalStudyTime) {
+      updatedStats.totalStudyTime += data.totalStudyTime;
+    }
+
+    setLearningStats(updatedStats);
+    debouncedSave('learning_stats', updatedStats);
+    
+    eventBus.emit('user:learning_stats_updated', { category, data: updatedStats });
+  }, [learningStats, debouncedSave]);
 
   // Settings
-  const updatePreferences = useCallback(async (preferences: Partial<UserProfile['preferences']>) => {
-    if (!userProfile) return;
+  const updatePreferences = useCallback(async (preferences: Partial<User['preferences']>) => {
+    if (!user) return;
 
-    const updatedProfile = {
-      ...userProfile,
+    const updatedUser = {
+      ...user,
       preferences: {
-        ...userProfile.preferences,
+        ...user.preferences,
         ...preferences,
       },
     };
 
-    setUserProfile(updatedProfile);
-    debouncedSave(STORAGE_KEYS.USER_PROFILE, updatedProfile);
+    setUser(updatedUser);
+    debouncedSave(STORAGE_KEYS.USER_PROFILE, updatedUser);
     
-    eventBus.emit('user:preferences_updated', { preferences: updatedProfile.preferences });
-  }, [userProfile, debouncedSave]);
+    eventBus.emit('user:preferences_updated', { preferences: updatedUser.preferences });
+  }, [user, debouncedSave]);
 
   // Utility functions
   const reset = useCallback(async () => {
     try {
       await AsyncStorage.multiRemove(Object.values(STORAGE_KEYS));
-      await initialize();
+      await AsyncStorage.removeItem('learning_stats');
+      setUser(null);
+      setUserProgress(null);
+      setAchievements(ACHIEVEMENT_DEFINITIONS);
+      setPortfolio([]);
+      setLearningStats(createDefaultLearningStats());
       eventBus.emit('user:data_reset');
     } catch (error) {
       console.error('Failed to reset user data:', error);
     }
-  }, [initialize]);
+  }, []);
 
   const exportData = useCallback(async (): Promise<string> => {
     const data = {
-      profile: userProfile,
-      progress: userProgress,
+      user,
+      userProgress,
       achievements,
       portfolio,
+      learningStats,
       exportedAt: new Date().toISOString(),
     };
     return JSON.stringify(data, null, 2);
-  }, [userProfile, userProgress, achievements, portfolio]);
+  }, [user, userProgress, achievements, portfolio, learningStats]);
 
   // Initialize on mount
   useEffect(() => {
@@ -760,15 +895,25 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
   // Context value
   const contextValue = useMemo<UserProgressContextType>(() => ({
     // User Profile
-    userProfile,
+    user,
+    userProfile: user, // alias
     updateProfile,
     setSkillLevel,
+    createUser,
 
     // Progress & XP
     userProgress,
+    progress,
     addXP,
     getCurrentLevel,
     getXPProgress,
+
+    // Legacy progress properties
+    level,
+    xp,
+    xpToNextLevel,
+    xpProgress,
+    streakDays,
 
     // Achievements
     achievements,
@@ -785,11 +930,14 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
     streakData,
     recordActivity,
     updateStreakGoal,
+    getDailyGoalProgress,
+    checkDailyStreak,
 
-    // Statistics
-    userStats,
+    // Statistics & Learning
+    learningStats,
     updateDrawingTime,
     recordLessonCompletion,
+    updateLearningStats,
 
     // Settings & Preferences
     updatePreferences,
@@ -803,15 +951,14 @@ export function UserProgressProvider({ children }: { children: ReactNode }) {
     reset,
     exportData,
   }), [
-    userProfile, updateProfile, setSkillLevel,
-    userProgress, addXP, getCurrentLevel, getXPProgress,
+    user, userProgress, progress, addXP, getCurrentLevel, getXPProgress,
+    level, xp, xpToNextLevel, xpProgress, streakDays,
     achievements, unlockedAchievements, checkAndUnlockAchievements,
     portfolio, addToPortfolio, updatePortfolioItem, deletePortfolioItem,
-    streakData, recordActivity, updateStreakGoal,
-    userStats, updateDrawingTime, recordLessonCompletion,
-    updatePreferences,
-    isLoading, isInitialized,
-    initialize, reset, exportData,
+    streakData, recordActivity, updateStreakGoal, getDailyGoalProgress, checkDailyStreak,
+    learningStats, updateDrawingTime, recordLessonCompletion, updateLearningStats,
+    updatePreferences, updateProfile, setSkillLevel, createUser,
+    isLoading, isInitialized, initialize, reset, exportData,
   ]);
 
   return (
