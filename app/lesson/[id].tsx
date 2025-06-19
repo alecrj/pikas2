@@ -7,8 +7,9 @@ import {
   Pressable,
   Alert,
   Dimensions,
-  Modal,
   SafeAreaView,
+  Image,
+  ActivityIndicator,
 } from 'react-native';
 import Animated, { 
   FadeInUp, 
@@ -17,14 +18,17 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   withSpring,
+  withSequence,
 } from 'react-native-reanimated';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useTheme } from '../../src/contexts/ThemeContext';
 import { useLearning } from '../../src/contexts/LearningContext';
 import { useUserProgress } from '../../src/contexts/UserProgressContext';
-import { skillTreeManager } from '../../src/engines/learning/SkillTreeManager';
 import { lessonEngine } from '../../src/engines/learning/LessonEngine';
-import { Lesson, TheorySegment, PracticeInstruction } from '../../src/types';
+import { skillTreeManager } from '../../src/engines/learning/SkillTreeManager';
+import { musicManager } from '../../src/engines/LessonMusicManager';
+import { Lesson, LessonContent } from '../../src/types';
+import * as Haptics from 'expo-haptics';
 import {
   Play,
   Pause,
@@ -32,78 +36,123 @@ import {
   ChevronRight,
   CheckCircle,
   Circle,
-  BookOpen,
-  Brush,
-  Target,
-  Clock,
+  X,
+  Lightbulb,
   Star,
   Trophy,
-  Lightbulb,
-  X,
-  RotateCcw,
-  Eye,
-  EyeOff,
+  Clock,
+  Target,
+  Brush,
+  BookOpen,
   Volume2,
   VolumeX,
-  Settings,
-  HelpCircle,
 } from 'lucide-react-native';
+
+// Import the simple canvas for drawing lessons
+// Note: You'll need to create this file using the SimpleCanvas code I provided earlier
+import { SimpleCanvas } from '../../src/components/SimpleCanvas';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-type LessonPhase = 'intro' | 'theory' | 'practice' | 'assessment' | 'complete';
-
+/**
+ * UNIVERSAL LESSON SCREEN
+ * 
+ * Handles ALL lesson types:
+ * - Theory lessons (multiple choice, true/false, color matching)
+ * - Drawing practice (with canvas and validation)
+ * - Guided tutorials (step-by-step instructions)
+ * - Video lessons (interactive video content)
+ * 
+ * EASILY EXTENSIBLE: Just add new content renderers
+ */
 export default function LessonScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams();
-  const theme = useTheme();
-  const { startLesson, completeLesson, validateStep } = useLearning();
-  const { addXP, updateLearningStats } = useUserProgress();
+  const { theme } = useTheme();
+  const { addXP } = useUserProgress();
   
   // Lesson state
   const [lesson, setLesson] = useState<Lesson | null>(null);
-  const [currentPhase, setCurrentPhase] = useState<LessonPhase>('intro');
-  const [currentTheoryIndex, setCurrentTheoryIndex] = useState(0);
-  const [currentPracticeIndex, setCurrentPracticeIndex] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<Set<string>>(new Set());
+  const [currentContent, setCurrentContent] = useState<LessonContent | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<any>(null);
+  const [showResult, setShowResult] = useState(false);
+  const [resultData, setResultData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [showHint, setShowHint] = useState(false);
-  const [currentHint, setCurrentHint] = useState<string>('');
-  const [lessonScore, setLessonScore] = useState(0);
   const [timeSpent, setTimeSpent] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [musicEnabled, setMusicEnabled] = useState(true);
   
-  // Animation values
+  // Canvas ref for drawing lessons
+  const canvasRef = useRef<any>(null);
+  
+  // Animations
   const progressAnimation = useSharedValue(0);
-  const phaseAnimation = useSharedValue(0);
-  
-  // Refs
-  const startTime = useRef<number>(Date.now());
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const resultAnimation = useSharedValue(0);
+  const celebrationAnimation = useSharedValue(0);
   
   const styles = createStyles(theme);
 
-  // Load lesson data
+  // =================== LESSON INITIALIZATION ===================
+
   useEffect(() => {
     if (id && typeof id === 'string') {
-      const lessonData = skillTreeManager.getLesson(id);
-      if (lessonData) {
-        setLesson(lessonData);
-        startTimer();
-      } else {
-        Alert.alert('Error', 'Lesson not found');
-        router.back();
-      }
+      initializeLesson(id);
     }
   }, [id]);
 
-  // Timer management
+  const initializeLesson = async (lessonId: string) => {
+    try {
+      setIsLoading(true);
+      
+      // Get lesson data
+      const lessonData = skillTreeManager.getLesson(lessonId);
+      if (!lessonData) {
+        Alert.alert('Error', 'Lesson not found');
+        router.back();
+        return;
+      }
+      
+      setLesson(lessonData);
+      
+      // Start lesson engine
+      await lessonEngine.startLesson(lessonData);
+      
+      // Get first content
+      const firstContent = lessonEngine.getCurrentContent();
+      if (firstContent) {
+        setCurrentContent(firstContent);
+      }
+      
+      // Start background music
+      if (musicEnabled) {
+        const musicType = lessonData.type === 'theory' ? 'theory' : 
+                         lessonData.type === 'practice' ? 'practice' : 'drawing';
+        await musicManager.startLessonMusic(musicType);
+      }
+      
+      // Start timer
+      startTimer();
+      
+      console.log(`🎓 Lesson initialized: ${lessonData.title}`);
+      
+    } catch (error) {
+      console.error('❌ Failed to initialize lesson:', error);
+      Alert.alert('Error', 'Failed to load lesson');
+      router.back();
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // =================== TIMER MANAGEMENT ===================
+
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const startTime = useRef<number>(Date.now());
+
   const startTimer = () => {
     startTime.current = Date.now();
     timerRef.current = setInterval(() => {
-      if (!isPaused) {
-        setTimeSpent(Math.floor((Date.now() - startTime.current) / 1000));
-      }
+      setTimeSpent(Math.floor((Date.now() - startTime.current) / 1000));
     }, 1000);
   };
 
@@ -115,618 +164,545 @@ export default function LessonScreen() {
   };
 
   useEffect(() => {
-    return () => stopTimer();
+    return () => {
+      stopTimer();
+      musicManager.stop();
+    };
   }, []);
 
-  // Calculate progress
-  const calculateProgress = useCallback((): number => {
-    if (!lesson) return 0;
-    
-    const totalSteps = 1 + // intro
-      lesson.theoryContent.segments.length +
-      lesson.practiceContent.instructions.length +
-      1; // assessment
-    
-    let currentStep = 0;
-    
-    switch (currentPhase) {
-      case 'intro':
-        currentStep = 0;
-        break;
-      case 'theory':
-        currentStep = 1 + currentTheoryIndex;
-        break;
-      case 'practice':
-        currentStep = 1 + lesson.theoryContent.segments.length + currentPracticeIndex;
-        break;
-      case 'assessment':
-        currentStep = totalSteps - 1;
-        break;
-      case 'complete':
-        currentStep = totalSteps;
-        break;
-    }
-    
-    return (currentStep / totalSteps) * 100;
-  }, [lesson, currentPhase, currentTheoryIndex, currentPracticeIndex]);
+  // =================== PROGRESS TRACKING ===================
 
-  // Update progress animation
   useEffect(() => {
-    const progress = calculateProgress();
-    progressAnimation.value = withTiming(progress / 100, { duration: 500 });
-  }, [currentPhase, currentTheoryIndex, currentPracticeIndex]);
+    const progress = lessonEngine.getLessonProgress();
+    if (progress) {
+      progressAnimation.value = withTiming(progress.contentProgress / 100, { duration: 500 });
+    }
+  }, [currentContent]);
 
-  // Phase transition
-  const transitionToPhase = (newPhase: LessonPhase) => {
-    phaseAnimation.value = withSpring(0, { damping: 15 }, () => {
-      setCurrentPhase(newPhase);
-      phaseAnimation.value = withSpring(1, { damping: 15 });
-    });
-  };
+  // =================== ANSWER HANDLING ===================
 
-  // Lesson navigation
-  const startLessonFlow = async () => {
-    if (!lesson) return;
+  const handleAnswerSelect = useCallback(async (answer: any) => {
+    if (!currentContent || showResult) return;
     
     try {
-      await startLesson(lesson);
-      transitionToPhase('theory');
-    } catch (error) {
-      Alert.alert('Error', 'Failed to start lesson');
-    }
-  };
-
-  const nextTheorySegment = () => {
-    if (!lesson) return;
-    
-    if (currentTheoryIndex < lesson.theoryContent.segments.length - 1) {
-      setCurrentTheoryIndex(currentTheoryIndex + 1);
-    } else {
-      transitionToPhase('practice');
-    }
-  };
-
-  const previousTheorySegment = () => {
-    if (currentTheoryIndex > 0) {
-      setCurrentTheoryIndex(currentTheoryIndex - 1);
-    } else {
-      transitionToPhase('intro');
-    }
-  };
-
-  const nextPracticeStep = async () => {
-    if (!lesson) return;
-    
-    const currentInstruction = lesson.practiceContent.instructions[currentPracticeIndex];
-    
-    // Validate current step
-    const isValid = await validateStep(currentPracticeIndex, {
-      // Mock validation data
-      strokes: [{ points: [{ x: 100, y: 100 }] }],
-      completed: true,
-    });
-    
-    if (isValid) {
-      setCompletedSteps(prev => new Set([...prev, currentInstruction.id]));
-      setLessonScore(lessonScore + 20);
+      setIsLoading(true);
+      setSelectedAnswer(answer);
       
-      if (currentPracticeIndex < lesson.practiceContent.instructions.length - 1) {
-        setCurrentPracticeIndex(currentPracticeIndex + 1);
+      // Submit answer to lesson engine
+      const result = await lessonEngine.submitAnswer(currentContent.id, answer);
+      
+      setResultData(result);
+      setShowResult(true);
+      
+      // Animate result
+      resultAnimation.value = withTiming(1, { duration: 300 });
+      
+      if (result.isCorrect) {
+        // Success animation
+        celebrationAnimation.value = withSequence(
+          withSpring(1.2, { damping: 10 }),
+          withSpring(1, { damping: 15 })
+        );
+        
+        // Haptic feedback
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
-        transitionToPhase('assessment');
+        // Error feedback
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
-    } else {
-      // Show hint if validation fails
-      const hint = lesson.practiceContent.hints.find(h => h.stepIndex === currentPracticeIndex);
-      if (hint) {
-        setCurrentHint(hint.text);
-        setShowHint(true);
-      }
+      
+    } catch (error) {
+      console.error('❌ Failed to submit answer:', error);
+      Alert.alert('Error', 'Failed to submit answer');
+    } finally {
+      setIsLoading(false);
     }
-  };
+  }, [currentContent, showResult]);
 
-  const completeLessonFlow = async () => {
-    if (!lesson) return;
-    
+  // =================== NAVIGATION ===================
+
+  const handleContinue = useCallback(async () => {
+    try {
+      const hasNext = await lessonEngine.nextContent();
+      
+      if (hasNext) {
+        // Move to next content
+        const nextContent = lessonEngine.getCurrentContent();
+        setCurrentContent(nextContent);
+        setSelectedAnswer(null);
+        setShowResult(false);
+        setResultData(null);
+        setShowHint(false);
+        
+        // Reset animations
+        resultAnimation.value = 0;
+        celebrationAnimation.value = 0;
+        
+      } else {
+        // Lesson completed
+        await handleLessonComplete();
+      }
+      
+    } catch (error) {
+      console.error('❌ Failed to continue:', error);
+    }
+  }, []);
+
+  const handleLessonComplete = useCallback(async () => {
     try {
       stopTimer();
+      musicManager.stop();
       
-      const finalScore = Math.max(60, lessonScore + (timeSpent < lesson.estimatedTime * 60 ? 20 : 0));
-      
-      await completeLesson(finalScore);
-      
-      // Award XP and update stats
-      addXP(lesson.rewards.xp);
-      updateLearningStats('lessons', { 
-        lessonsCompleted: 1,
-        totalStudyTime: timeSpent,
-      });
-      
-      setLessonScore(finalScore);
-      transitionToPhase('complete');
+      const progress = lessonEngine.getLessonProgress();
+      if (progress && lesson) {
+        // Award XP
+        addXP(progress.score);
+        
+        // Show completion screen
+        Alert.alert(
+          'Lesson Complete! 🎉',
+          `Score: ${Math.round(progress.score)}%\nXP Earned: ${lesson.rewards.xp}\nTime: ${Math.floor(timeSpent / 60)}m ${timeSpent % 60}s`,
+          [
+            {
+              text: 'Continue Learning',
+              onPress: () => router.push('/(tabs)/learn')
+            }
+          ]
+        );
+      }
       
     } catch (error) {
-      Alert.alert('Error', 'Failed to complete lesson');
+      console.error('❌ Failed to complete lesson:', error);
     }
-  };
+  }, [lesson, timeSpent, addXP, router]);
 
-  const exitLesson = () => {
+  const handleExit = useCallback(() => {
     Alert.alert(
       'Exit Lesson',
-      'Are you sure you want to exit? Your progress will be saved.',
+      'Your progress will be saved. Continue learning later?',
       [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Exit', 
+        { text: 'Stay', style: 'cancel' },
+        {
+          text: 'Exit',
           onPress: () => {
-            stopTimer();
+            lessonEngine.exitLesson();
+            musicManager.stop();
             router.back();
           }
-        },
+        }
       ]
     );
-  };
+  }, [router]);
 
-  // Animated styles
-  const progressBarStyle = useAnimatedStyle(() => ({
-    width: `${progressAnimation.value * 100}%`,
-  }));
+  // =================== HINT SYSTEM ===================
 
-  const phaseStyle = useAnimatedStyle(() => ({
-    opacity: phaseAnimation.value,
-    transform: [
-      {
-        translateY: (1 - phaseAnimation.value) * 20,
-      },
-    ],
-  }));
+  const handleShowHint = useCallback(() => {
+    if (currentContent?.hint) {
+      setShowHint(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [currentContent]);
 
-  // Render methods
-  const renderHeader = () => (
-    <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
-      <Pressable style={styles.headerButton} onPress={exitLesson}>
-        <ChevronLeft size={24} color={theme.colors.text} />
-      </Pressable>
+  // =================== CONTENT RENDERERS ===================
+
+  const renderMultipleChoice = (content: LessonContent) => (
+    <View style={styles.contentContainer}>
+      <Text style={[styles.questionText, { color: theme.colors.text }]}>
+        {content.question}
+      </Text>
       
-      <View style={styles.headerCenter}>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
-          {lesson?.title || 'Loading...'}
-        </Text>
-        <View style={styles.progressContainer}>
-          <View style={[styles.progressBar, { backgroundColor: theme.colors.border }]}>
-            <Animated.View 
+      {content.image && (
+        <Image source={{ uri: content.image }} style={styles.questionImage} />
+      )}
+      
+      <View style={styles.optionsContainer}>
+        {content.options?.map((option, index) => {
+          const isSelected = selectedAnswer === index;
+          const isCorrectOption = index === content.correctAnswer;
+          
+          let backgroundColor = theme.colors.surface;
+          let borderColor = theme.colors.border;
+          
+          if (showResult) {
+            if (isSelected && resultData?.isCorrect) {
+              backgroundColor = theme.colors.success + '20';
+              borderColor = theme.colors.success;
+            } else if (isSelected && !resultData?.isCorrect) {
+              backgroundColor = theme.colors.error + '20';
+              borderColor = theme.colors.error;
+            } else if (isCorrectOption) {
+              backgroundColor = theme.colors.success + '20';
+              borderColor = theme.colors.success;
+            }
+          } else if (isSelected) {
+            backgroundColor = theme.colors.primary + '20';
+            borderColor = theme.colors.primary;
+          }
+          
+          return (
+            <Pressable
+              key={index}
               style={[
-                styles.progressFill, 
-                { backgroundColor: theme.colors.primary },
-                progressBarStyle
-              ]} 
-            />
-          </View>
-          <Text style={[styles.progressText, { color: theme.colors.textSecondary }]}>
-            {Math.round(calculateProgress())}%
-          </Text>
-        </View>
+                styles.optionButton,
+                { backgroundColor, borderColor, borderWidth: 2 }
+              ]}
+              onPress={() => handleAnswerSelect(index)}
+              disabled={showResult || isLoading}
+            >
+              <Text style={[styles.optionText, { color: theme.colors.text }]}>
+                {String.fromCharCode(65 + index)}. {option}
+              </Text>
+              
+              {showResult && isCorrectOption && (
+                <CheckCircle size={24} color={theme.colors.success} />
+              )}
+              {showResult && isSelected && !resultData?.isCorrect && (
+                <X size={24} color={theme.colors.error} />
+              )}
+            </Pressable>
+          );
+        })}
       </View>
-      
-      <Pressable style={styles.headerButton} onPress={() => setShowSettings(true)}>
-        <Settings size={24} color={theme.colors.text} />
-      </Pressable>
     </View>
   );
 
-  const renderIntroPhase = () => (
-    <Animated.View style={[styles.phaseContainer, phaseStyle]}>
-      <ScrollView contentContainerStyle={styles.introContent}>
-        <View style={styles.lessonIntro}>
-          <View style={[styles.lessonIcon, { backgroundColor: theme.colors.primary + '20' }]}>
-            <BookOpen size={32} color={theme.colors.primary} />
-          </View>
-          
-          <Text style={[styles.lessonTitle, { color: theme.colors.text }]}>
-            {lesson?.title}
-          </Text>
-          
-          <Text style={[styles.lessonDescription, { color: theme.colors.textSecondary }]}>
-            {lesson?.description}
-          </Text>
-          
-          <View style={styles.lessonMeta}>
-            <View style={styles.metaItem}>
-              <Clock size={16} color={theme.colors.textSecondary} />
-              <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>
-                {lesson?.estimatedTime} min
-              </Text>
-            </View>
-            
-            <View style={styles.metaItem}>
-              <Star size={16} color={theme.colors.warning} />
-              <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>
-                {lesson?.rewards.xp} XP
-              </Text>
-            </View>
-            
-            <View style={styles.metaItem}>
-              <Target size={16} color={theme.colors.success} />
-              <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>
-                Level {lesson?.difficulty}
-              </Text>
-            </View>
-          </View>
-          
-          <View style={styles.objectivesContainer}>
-            <Text style={[styles.objectivesTitle, { color: theme.colors.text }]}>
-              What you'll learn:
-            </Text>
-            
-            {lesson?.objectives.map((objective, index) => (
-              <View key={objective.id} style={styles.objectiveItem}>
-                <CheckCircle size={16} color={theme.colors.success} />
-                <Text style={[styles.objectiveText, { color: theme.colors.text }]}>
-                  {objective.description}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      </ScrollView>
+  const renderTrueFalse = (content: LessonContent) => (
+    <View style={styles.contentContainer}>
+      <Text style={[styles.questionText, { color: theme.colors.text }]}>
+        {content.question}
+      </Text>
       
-      <View style={styles.phaseActions}>
-        <Pressable
-          style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]}
-          onPress={startLessonFlow}
-        >
-          <Play size={20} color={theme.colors.surface} />
-          <Text style={[styles.primaryButtonText, { color: theme.colors.surface }]}>
-            Start Lesson
-          </Text>
-        </Pressable>
-      </View>
-    </Animated.View>
-  );
-
-  const renderTheoryPhase = () => {
-    const currentSegment = lesson?.theoryContent.segments[currentTheoryIndex];
-    if (!currentSegment) return null;
-    
-    return (
-      <Animated.View style={[styles.phaseContainer, phaseStyle]}>
-        <ScrollView contentContainerStyle={styles.theoryContent}>
-          <View style={styles.segmentHeader}>
-            <View style={[styles.segmentIcon, { backgroundColor: theme.colors.info + '20' }]}>
-              <BookOpen size={24} color={theme.colors.info} />
-            </View>
-            
-            <Text style={[styles.segmentTitle, { color: theme.colors.text }]}>
-              Theory • {currentTheoryIndex + 1} of {lesson?.theoryContent.segments.length}
-            </Text>
-          </View>
+      <View style={styles.trueFalseContainer}>
+        {[true, false].map((value) => {
+          const label = value ? 'True' : 'False';
+          const isSelected = selectedAnswer === value;
+          const isCorrect = value === content.correctAnswer;
           
-          <View style={[styles.segmentCard, { backgroundColor: theme.colors.surface }]}>
-            {currentSegment.type === 'text' && (
-              <Text style={[styles.segmentText, { color: theme.colors.text }]}>
-                {typeof currentSegment.content === 'string' 
-                  ? currentSegment.content 
-                  : currentSegment.content.text}
+          let backgroundColor = theme.colors.surface;
+          let borderColor = theme.colors.border;
+          
+          if (showResult) {
+            if (isSelected && resultData?.isCorrect) {
+              backgroundColor = theme.colors.success + '20';
+              borderColor = theme.colors.success;
+            } else if (isSelected && !resultData?.isCorrect) {
+              backgroundColor = theme.colors.error + '20';
+              borderColor = theme.colors.error;
+            } else if (isCorrect) {
+              backgroundColor = theme.colors.success + '20';
+              borderColor = theme.colors.success;
+            }
+          } else if (isSelected) {
+            backgroundColor = theme.colors.primary + '20';
+            borderColor = theme.colors.primary;
+          }
+          
+          return (
+            <Pressable
+              key={label}
+              style={[
+                styles.trueFalseButton,
+                { backgroundColor, borderColor, borderWidth: 2 }
+              ]}
+              onPress={() => handleAnswerSelect(value)}
+              disabled={showResult || isLoading}
+            >
+              <Text style={[styles.trueFalseText, { color: theme.colors.text }]}>
+                {label}
               </Text>
-            )}
-            
-            {currentSegment.type === 'interactive' && (
-              <View style={styles.interactiveContent}>
-                <Text style={[styles.interactiveTitle, { color: theme.colors.primary }]}>
-                  {typeof currentSegment.content === 'object' && currentSegment.content.title
-                    ? currentSegment.content.title
-                    : 'Interactive Demo'}
-                </Text>
-                
-                <Text style={[styles.interactiveInstructions, { color: theme.colors.text }]}>
-                  {typeof currentSegment.content === 'object' && currentSegment.content.instructions
-                    ? currentSegment.content.instructions
-                    : 'Follow along with the demonstration below.'}
-                </Text>
-                
-                <View style={[styles.demoArea, { backgroundColor: theme.colors.background }]}>
-                  <Eye size={32} color={theme.colors.textSecondary} />
-                  <Text style={[styles.demoText, { color: theme.colors.textSecondary }]}>
-                    Interactive demo would appear here
-                  </Text>
-                </View>
-              </View>
-            )}
-          </View>
-        </ScrollView>
-        
-        <View style={styles.phaseActions}>
-          <Pressable
-            style={[styles.secondaryButton, { borderColor: theme.colors.border }]}
-            onPress={previousTheorySegment}
-          >
-            <ChevronLeft size={20} color={theme.colors.text} />
-            <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>
-              Previous
-            </Text>
-          </Pressable>
-          
-          <Pressable
-            style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]}
-            onPress={nextTheorySegment}
-          >
-            <Text style={[styles.primaryButtonText, { color: theme.colors.surface }]}>
-              {currentTheoryIndex < (lesson?.theoryContent.segments.length || 0) - 1 ? 'Next' : 'Practice'}
-            </Text>
-            <ChevronRight size={20} color={theme.colors.surface} />
-          </Pressable>
-        </View>
-      </Animated.View>
-    );
-  };
-
-  const renderPracticePhase = () => {
-    const currentInstruction = lesson?.practiceContent.instructions[currentPracticeIndex];
-    if (!currentInstruction) return null;
-    
-    const isCompleted = completedSteps.has(currentInstruction.id);
-    
-    return (
-      <Animated.View style={[styles.phaseContainer, phaseStyle]}>
-        <ScrollView contentContainerStyle={styles.practiceContent}>
-          <View style={styles.segmentHeader}>
-            <View style={[styles.segmentIcon, { backgroundColor: theme.colors.primary + '20' }]}>
-              <Brush size={24} color={theme.colors.primary} />
-            </View>
-            
-            <Text style={[styles.segmentTitle, { color: theme.colors.text }]}>
-              Practice • Step {currentPracticeIndex + 1} of {lesson?.practiceContent.instructions.length}
-            </Text>
-          </View>
-          
-          <View style={[styles.segmentCard, { backgroundColor: theme.colors.surface }]}>
-            <Text style={[styles.instructionText, { color: theme.colors.text }]}>
-              {currentInstruction.text}
-            </Text>
-            
-            {currentInstruction.hint && (
-              <View style={[styles.hintContainer, { backgroundColor: theme.colors.warning + '20' }]}>
-                <Lightbulb size={16} color={theme.colors.warning} />
-                <Text style={[styles.hintText, { color: theme.colors.text }]}>
-                  Tip: {currentInstruction.hint}
-                </Text>
-              </View>
-            )}
-            
-            <View style={[styles.practiceArea, { backgroundColor: theme.colors.background }]}>
-              <Brush size={48} color={theme.colors.textSecondary} />
-              <Text style={[styles.practiceAreaText, { color: theme.colors.textSecondary }]}>
-                Drawing canvas would appear here
-              </Text>
-              <Text style={[styles.practiceAreaSubtext, { color: theme.colors.textSecondary }]}>
-                Follow the instructions above to complete this step
-              </Text>
-            </View>
-          </View>
-        </ScrollView>
-        
-        <View style={styles.phaseActions}>
-          <Pressable
-            style={[styles.secondaryButton, { borderColor: theme.colors.border }]}
-            onPress={() => {
-              if (currentPracticeIndex > 0) {
-                setCurrentPracticeIndex(currentPracticeIndex - 1);
-              } else {
-                transitionToPhase('theory');
-                setCurrentTheoryIndex((lesson?.theoryContent.segments.length || 1) - 1);
-              }
-            }}
-          >
-            <ChevronLeft size={20} color={theme.colors.text} />
-            <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>
-              Previous
-            </Text>
-          </Pressable>
-          
-          <Pressable
-            style={[
-              styles.primaryButton, 
-              { backgroundColor: isCompleted ? theme.colors.success : theme.colors.primary }
-            ]}
-            onPress={nextPracticeStep}
-          >
-            {isCompleted ? (
-              <CheckCircle size={20} color={theme.colors.surface} />
-            ) : (
-              <Circle size={20} color={theme.colors.surface} />
-            )}
-            <Text style={[styles.primaryButtonText, { color: theme.colors.surface }]}>
-              {currentPracticeIndex < (lesson?.practiceContent.instructions.length || 0) - 1 
-                ? 'Next Step' 
-                : 'Complete Practice'}
-            </Text>
-          </Pressable>
-        </View>
-      </Animated.View>
-    );
-  };
-
-  const renderAssessmentPhase = () => (
-    <Animated.View style={[styles.phaseContainer, phaseStyle]}>
-      <ScrollView contentContainerStyle={styles.assessmentContent}>
-        <View style={styles.segmentHeader}>
-          <View style={[styles.segmentIcon, { backgroundColor: theme.colors.success + '20' }]}>
-            <Target size={24} color={theme.colors.success} />
-          </View>
-          
-          <Text style={[styles.segmentTitle, { color: theme.colors.text }]}>
-            Assessment
-          </Text>
-        </View>
-        
-        <View style={[styles.segmentCard, { backgroundColor: theme.colors.surface }]}>
-          <Text style={[styles.assessmentTitle, { color: theme.colors.text }]}>
-            Great work! Let's review what you've learned.
-          </Text>
-          
-          <Text style={[styles.assessmentDescription, { color: theme.colors.textSecondary }]}>
-            You've completed all the practice steps. Your understanding will be assessed based on your performance.
-          </Text>
-          
-          <View style={styles.scorePreview}>
-            <Text style={[styles.scoreLabel, { color: theme.colors.textSecondary }]}>
-              Current Score
-            </Text>
-            <Text style={[styles.scoreValue, { color: theme.colors.primary }]}>
-              {lessonScore}/100
-            </Text>
-          </View>
-          
-          <View style={styles.timeSpentContainer}>
-            <Clock size={16} color={theme.colors.textSecondary} />
-            <Text style={[styles.timeSpentText, { color: theme.colors.textSecondary }]}>
-              Time spent: {Math.floor(timeSpent / 60)}m {timeSpent % 60}s
-            </Text>
-          </View>
-        </View>
-      </ScrollView>
-      
-      <View style={styles.phaseActions}>
-        <Pressable
-          style={[styles.primaryButton, { backgroundColor: theme.colors.success }]}
-          onPress={completeLessonFlow}
-        >
-          <Trophy size={20} color={theme.colors.surface} />
-          <Text style={[styles.primaryButtonText, { color: theme.colors.surface }]}>
-            Complete Lesson
-          </Text>
-        </Pressable>
-      </View>
-    </Animated.View>
-  );
-
-  const renderCompletePhase = () => (
-    <Animated.View style={[styles.phaseContainer, phaseStyle]}>
-      <ScrollView contentContainerStyle={styles.completeContent}>
-        <View style={styles.completionHeader}>
-          <View style={[styles.completionIcon, { backgroundColor: theme.colors.success + '20' }]}>
-            <Trophy size={48} color={theme.colors.success} />
-          </View>
-          
-          <Text style={[styles.completionTitle, { color: theme.colors.text }]}>
-            Lesson Complete!
-          </Text>
-          
-          <Text style={[styles.completionSubtitle, { color: theme.colors.textSecondary }]}>
-            Congratulations on completing {lesson?.title}
-          </Text>
-        </View>
-        
-        <View style={[styles.resultsCard, { backgroundColor: theme.colors.surface }]}>
-          <View style={styles.resultRow}>
-            <Text style={[styles.resultLabel, { color: theme.colors.textSecondary }]}>
-              Final Score
-            </Text>
-            <Text style={[styles.resultValue, { color: theme.colors.success }]}>
-              {lessonScore}/100
-            </Text>
-          </View>
-          
-          <View style={styles.resultRow}>
-            <Text style={[styles.resultLabel, { color: theme.colors.textSecondary }]}>
-              XP Earned
-            </Text>
-            <Text style={[styles.resultValue, { color: theme.colors.primary }]}>
-              +{lesson?.rewards.xp}
-            </Text>
-          </View>
-          
-          <View style={styles.resultRow}>
-            <Text style={[styles.resultLabel, { color: theme.colors.textSecondary }]}>
-              Time Spent
-            </Text>
-            <Text style={[styles.resultValue, { color: theme.colors.text }]}>
-              {Math.floor(timeSpent / 60)}m {timeSpent % 60}s
-            </Text>
-          </View>
-        </View>
-        
-        {lesson?.rewards.achievements && lesson.rewards.achievements.length > 0 && (
-          <View style={[styles.achievementsCard, { backgroundColor: theme.colors.surface }]}>
-            <Text style={[styles.achievementsTitle, { color: theme.colors.text }]}>
-              Achievements Unlocked
-            </Text>
-            
-            {lesson.rewards.achievements.map((achievement, index) => (
-              <View key={index} style={styles.achievementItem}>
-                <Star size={16} color={theme.colors.warning} />
-                <Text style={[styles.achievementText, { color: theme.colors.text }]}>
-                  {achievement}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </ScrollView>
-      
-      <View style={styles.phaseActions}>
-        <Pressable
-          style={[styles.secondaryButton, { borderColor: theme.colors.border }]}
-          onPress={() => router.push('/(tabs)/learn')}
-        >
-          <Text style={[styles.secondaryButtonText, { color: theme.colors.text }]}>
-            Back to Lessons
-          </Text>
-        </Pressable>
-        
-        <Pressable
-          style={[styles.primaryButton, { backgroundColor: theme.colors.primary }]}
-          onPress={() => router.push('/(tabs)/draw')}
-        >
-          <Text style={[styles.primaryButtonText, { color: theme.colors.surface }]}>
-            Practice Drawing
-          </Text>
-          <Brush size={20} color={theme.colors.surface} />
-        </Pressable>
-      </View>
-    </Animated.View>
-  );
-
-  const renderHintModal = () => (
-    <Modal
-      visible={showHint}
-      transparent
-      animationType="slide"
-      onRequestClose={() => setShowHint(false)}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={[styles.hintModal, { backgroundColor: theme.colors.surface }]}>
-          <View style={styles.hintModalHeader}>
-            <Lightbulb size={24} color={theme.colors.warning} />
-            <Text style={[styles.hintModalTitle, { color: theme.colors.text }]}>
-              Hint
-            </Text>
-            <Pressable onPress={() => setShowHint(false)}>
-              <X size={24} color={theme.colors.textSecondary} />
             </Pressable>
-          </View>
-          
-          <Text style={[styles.hintModalText, { color: theme.colors.text }]}>
-            {currentHint}
-          </Text>
-          
-          <Pressable
-            style={[styles.hintModalButton, { backgroundColor: theme.colors.primary }]}
-            onPress={() => setShowHint(false)}
-          >
-            <Text style={[styles.hintModalButtonText, { color: theme.colors.surface }]}>
-              Got it!
-            </Text>
-          </Pressable>
-        </View>
+          );
+        })}
       </View>
-    </Modal>
+    </View>
   );
 
-  if (!lesson) {
+  const renderColorMatch = (content: LessonContent) => (
+    <View style={styles.contentContainer}>
+      <Text style={[styles.questionText, { color: theme.colors.text }]}>
+        {content.question}
+      </Text>
+      
+      <View style={styles.colorContainer}>
+        {content.options?.map((color, index) => {
+          const isSelected = selectedAnswer === color;
+          const isCorrect = typeof content.correctAnswer === 'number' 
+            ? index === content.correctAnswer 
+            : color === content.correctAnswer;
+          
+          return (
+            <Pressable
+              key={color}
+              style={[
+                styles.colorButton,
+                { 
+                  backgroundColor: color,
+                  borderWidth: isSelected ? 4 : 2,
+                  borderColor: isSelected ? theme.colors.primary : theme.colors.border,
+                }
+              ]}
+              onPress={() => handleAnswerSelect(color)}
+              disabled={showResult || isLoading}
+            >
+              {showResult && isCorrect && (
+                <CheckCircle size={24} color="white" />
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+
+  const renderDrawingExercise = (content: LessonContent) => (
+    <View style={styles.contentContainer}>
+      <Text style={[styles.questionText, { color: theme.colors.text }]}>
+        {content.instruction}
+      </Text>
+      
+      {content.hint && (
+        <Text style={[styles.instructionHint, { color: theme.colors.textSecondary }]}>
+          💡 {content.hint}
+        </Text>
+      )}
+      
+      <View style={styles.canvasContainer}>
+        <SimpleCanvas
+          ref={canvasRef}
+          width={screenWidth - 40}
+          height={300}
+          onReady={() => console.log('Canvas ready for drawing')}
+          onStrokeEnd={(stroke) => {
+            // Auto-validate after each stroke for immediate feedback
+            if (canvasRef.current) {
+              const strokes = canvasRef.current.getStrokes();
+              handleAnswerSelect({ strokes, strokeCount: strokes.length });
+            }
+          }}
+        />
+      </View>
+      
+      <View style={styles.drawingControls}>
+        <Pressable
+          style={[styles.controlButton, { backgroundColor: theme.colors.surface }]}
+          onPress={() => canvasRef.current?.undo()}
+        >
+          <Text style={[styles.controlButtonText, { color: theme.colors.text }]}>
+            Undo
+          </Text>
+        </Pressable>
+        
+        <Pressable
+          style={[styles.controlButton, { backgroundColor: theme.colors.surface }]}
+          onPress={() => canvasRef.current?.clear()}
+        >
+          <Text style={[styles.controlButtonText, { color: theme.colors.text }]}>
+            Clear
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  const renderGuidedStep = (content: LessonContent) => (
+    <View style={styles.contentContainer}>
+      <View style={styles.guidedHeader}>
+        <Target size={24} color={theme.colors.primary} />
+        <Text style={[styles.guidedTitle, { color: theme.colors.text }]}>
+          Guided Practice
+        </Text>
+      </View>
+      
+      <Text style={[styles.questionText, { color: theme.colors.text }]}>
+        {content.instruction}
+      </Text>
+      
+      {content.hint && (
+        <View style={[styles.hintContainer, { backgroundColor: theme.colors.warning + '20' }]}>
+          <Lightbulb size={16} color={theme.colors.warning} />
+          <Text style={[styles.hintText, { color: theme.colors.text }]}>
+            {content.hint}
+          </Text>
+        </View>
+      )}
+      
+      <View style={styles.canvasContainer}>
+        <SimpleCanvas
+          ref={canvasRef}
+          width={screenWidth - 40}
+          height={300}
+          onReady={() => console.log('Guided canvas ready')}
+          onStrokeEnd={(stroke) => {
+            const strokes = canvasRef.current?.getStrokes() || [];
+            handleAnswerSelect({ strokes, completed: true });
+          }}
+        />
+      </View>
+    </View>
+  );
+
+  // =================== MAIN CONTENT RENDERER ===================
+
+  const renderCurrentContent = () => {
+    if (!currentContent) return null;
+    
+    switch (currentContent.type) {
+      case 'multiple_choice':
+        return renderMultipleChoice(currentContent);
+      case 'true_false':
+        return renderTrueFalse(currentContent);
+      case 'color_match':
+        return renderColorMatch(currentContent);
+      case 'drawing_exercise':
+        return renderDrawingExercise(currentContent);
+      case 'guided_step':
+        return renderGuidedStep(currentContent);
+      default:
+        return (
+          <View style={styles.contentContainer}>
+            <Text style={[styles.questionText, { color: theme.colors.text }]}>
+              Content type "{currentContent.type}" not yet implemented
+            </Text>
+          </View>
+        );
+    }
+  };
+
+  // =================== UI COMPONENTS ===================
+
+  const renderHeader = () => {
+    const progress = lessonEngine.getLessonProgress();
+    const progressPercent = Math.round(progress?.contentProgress || 0);
+    
+    return (
+      <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
+        <Pressable style={styles.headerButton} onPress={handleExit}>
+          <ChevronLeft size={24} color={theme.colors.text} />
+        </Pressable>
+        
+        <View style={styles.headerCenter}>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]} numberOfLines={1}>
+            {lesson?.title || 'Loading...'}
+          </Text>
+          
+          <View style={styles.progressContainer}>
+            <View style={[styles.progressBar, { backgroundColor: theme.colors.border }]}>
+              <Animated.View 
+                style={[
+                  styles.progressFill, 
+                  { backgroundColor: theme.colors.primary },
+                  useAnimatedStyle(() => ({
+                    width: `${progressAnimation.value * 100}%`,
+                  }))
+                ]} 
+              />
+            </View>
+            <Text style={[styles.progressText, { color: theme.colors.textSecondary }]}>
+              {progressPercent}%
+            </Text>
+          </View>
+        </View>
+        
+        <Pressable 
+          style={styles.headerButton} 
+          onPress={() => setMusicEnabled(!musicEnabled)}
+        >
+          {musicEnabled ? (
+            <Volume2 size={24} color={theme.colors.text} />
+          ) : (
+            <VolumeX size={24} color={theme.colors.text} />
+          )}
+        </Pressable>
+      </View>
+    );
+  };
+
+  const renderResultFeedback = () => {
+    if (!showResult || !resultData) return null;
+    
+    return (
+      <Animated.View style={[
+        styles.resultContainer,
+        useAnimatedStyle(() => ({
+          opacity: resultAnimation.value,
+        }))
+      ]}>
+        <View style={[
+          styles.resultCard,
+          { 
+            backgroundColor: resultData.isCorrect 
+              ? theme.colors.success + '20' 
+              : theme.colors.error + '20',
+            borderColor: resultData.isCorrect ? theme.colors.success : theme.colors.error,
+          }
+        ]}>
+          <Animated.View style={[
+            useAnimatedStyle(() => ({
+              transform: [{ scale: celebrationAnimation.value }],
+            }))
+          ]}>
+            {resultData.isCorrect ? (
+              <CheckCircle size={32} color={theme.colors.success} />
+            ) : (
+              <X size={32} color={theme.colors.error} />
+            )}
+          </Animated.View>
+          
+          <Text style={[
+            styles.resultTitle, 
+            { color: resultData.isCorrect ? theme.colors.success : theme.colors.error }
+          ]}>
+            {resultData.feedback}
+          </Text>
+          
+          {resultData.explanation && (
+            <Text style={[styles.explanation, { color: theme.colors.text }]}>
+              {resultData.explanation}
+            </Text>
+          )}
+          
+          {resultData.isCorrect && resultData.xpAwarded > 0 && (
+            <View style={styles.xpContainer}>
+              <Star size={16} color={theme.colors.warning} />
+              <Text style={[styles.xpText, { color: theme.colors.text }]}>
+                +{resultData.xpAwarded} XP
+              </Text>
+            </View>
+          )}
+        </View>
+        
+        <Pressable
+          style={[styles.continueButton, { backgroundColor: theme.colors.primary }]}
+          onPress={handleContinue}
+        >
+          <Text style={[styles.continueButtonText, { color: theme.colors.surface }]}>
+            Continue
+          </Text>
+        </Pressable>
+      </Animated.View>
+    );
+  };
+
+  const renderHintButton = () => {
+    if (!currentContent?.hint || showResult || showHint) return null;
+    
+    return (
+      <Pressable style={styles.hintButton} onPress={handleShowHint}>
+        <Lightbulb size={20} color={theme.colors.warning} />
+        <Text style={[styles.hintButtonText, { color: theme.colors.warning }]}>
+          Show Hint
+        </Text>
+      </Pressable>
+    );
+  };
+
+  // =================== LOADING STATE ===================
+
+  if (isLoading && !lesson) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={[styles.loadingText, { color: theme.colors.text }]}>
             Loading lesson...
           </Text>
@@ -735,20 +711,53 @@ export default function LessonScreen() {
     );
   }
 
+  // =================== MAIN RENDER ===================
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {renderHeader()}
       
-      {currentPhase === 'intro' && renderIntroPhase()}
-      {currentPhase === 'theory' && renderTheoryPhase()}
-      {currentPhase === 'practice' && renderPracticePhase()}
-      {currentPhase === 'assessment' && renderAssessmentPhase()}
-      {currentPhase === 'complete' && renderCompletePhase()}
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <Animated.View entering={FadeInUp} style={styles.lessonContainer}>
+          {/* Lesson type indicator */}
+          <View style={styles.lessonTypeContainer}>
+            <View style={[styles.lessonTypeIcon, { backgroundColor: theme.colors.primary + '20' }]}>
+              {lesson?.type === 'theory' ? (
+                <BookOpen size={20} color={theme.colors.primary} />
+              ) : (
+                <Brush size={20} color={theme.colors.primary} />
+              )}
+            </View>
+            <Text style={[styles.lessonTypeText, { color: theme.colors.textSecondary }]}>
+              {lesson?.type === 'theory' ? 'Theory' : 'Practice'} • {timeSpent > 0 && `${Math.floor(timeSpent / 60)}:${(timeSpent % 60).toString().padStart(2, '0')}`}
+            </Text>
+          </View>
+          
+          {/* Main content */}
+          {renderCurrentContent()}
+          
+          {/* Hint button */}
+          {renderHintButton()}
+          
+          {/* Hint display */}
+          {showHint && currentContent?.hint && (
+            <Animated.View entering={FadeInDown} style={[styles.hintDisplay, { backgroundColor: theme.colors.warning + '20' }]}>
+              <Lightbulb size={16} color={theme.colors.warning} />
+              <Text style={[styles.hintDisplayText, { color: theme.colors.text }]}>
+                {currentContent.hint}
+              </Text>
+            </Animated.View>
+          )}
+        </Animated.View>
+      </ScrollView>
       
-      {renderHintModal()}
+      {/* Result feedback overlay */}
+      {renderResultFeedback()}
     </SafeAreaView>
   );
 }
+
+// =================== STYLES ===================
 
 const createStyles = (theme: any) => StyleSheet.create({
   container: {
@@ -762,6 +771,7 @@ const createStyles = (theme: any) => StyleSheet.create({
   loadingText: {
     fontSize: 16,
     fontWeight: '500',
+    marginTop: 16,
   },
   header: {
     flexDirection: 'row',
@@ -803,337 +813,203 @@ const createStyles = (theme: any) => StyleSheet.create({
     fontWeight: '500',
     minWidth: 32,
   },
-  phaseContainer: {
+  scrollView: {
     flex: 1,
   },
-  introContent: {
-    padding: 24,
-    alignItems: 'center',
+  lessonContainer: {
+    padding: 20,
   },
-  lessonIntro: {
+  lessonTypeContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
-    maxWidth: 400,
+    marginBottom: 20,
   },
-  lessonIcon: {
+  lessonTypeIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  lessonTypeText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  contentContainer: {
+    marginBottom: 20,
+  },
+  questionText: {
+    fontSize: 20,
+    fontWeight: '600',
+    lineHeight: 28,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  questionImage: {
+    width: 200,
+    height: 200,
+    alignSelf: 'center',
+    marginBottom: 20,
+    borderRadius: 8,
+  },
+  instructionHint: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+    fontStyle: 'italic',
+  },
+  optionsContainer: {
+    gap: 12,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+  },
+  optionText: {
+    fontSize: 16,
+    fontWeight: '500',
+    flex: 1,
+  },
+  trueFalseContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  trueFalseButton: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 12,
+  },
+  trueFalseText: {
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  colorContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  colorButton: {
     width: 80,
     height: 80,
     borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
   },
-  lessonTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    textAlign: 'center',
-    marginBottom: 12,
+  canvasContainer: {
+    alignItems: 'center',
+    marginVertical: 20,
   },
-  lessonDescription: {
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 24,
-    marginBottom: 24,
-  },
-  lessonMeta: {
+  drawingControls: {
     flexDirection: 'row',
     justifyContent: 'center',
-    flexWrap: 'wrap',
-    marginBottom: 32,
+    gap: 12,
+    marginTop: 16,
   },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 12,
-    marginVertical: 4,
-  },
-  metaText: {
-    fontSize: 14,
-    marginLeft: 6,
-  },
-  objectivesContainer: {
-    width: '100%',
-    alignItems: 'flex-start',
-  },
-  objectivesTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  objectiveItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    width: '100%',
-  },
-  objectiveText: {
-    fontSize: 14,
-    marginLeft: 12,
-    flex: 1,
-  },
-  theoryContent: {
-    padding: 24,
-  },
-  practiceContent: {
-    padding: 24,
-  },
-  assessmentContent: {
-    padding: 24,
-  },
-  completeContent: {
-    padding: 24,
-    alignItems: 'center',
-  },
-  segmentHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  segmentIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  segmentTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  segmentCard: {
-    borderRadius: 12,
-    padding: 20,
-  },
-  segmentText: {
-    fontSize: 16,
-    lineHeight: 24,
-  },
-  interactiveContent: {
-    alignItems: 'center',
-  },
-  interactiveTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  interactiveInstructions: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  demoArea: {
-    width: '100%',
-    height: 200,
+  controlButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
   },
-  demoText: {
+  controlButtonText: {
     fontSize: 14,
-    marginTop: 8,
+    fontWeight: '500',
   },
-  instructionText: {
-    fontSize: 16,
-    lineHeight: 24,
+  guidedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 16,
+  },
+  guidedTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   hintContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
     borderRadius: 8,
-    marginBottom: 16,
+    marginVertical: 12,
   },
   hintText: {
-    fontSize: 14,
     marginLeft: 8,
+    fontSize: 14,
     flex: 1,
   },
-  practiceArea: {
-    width: '100%',
-    height: 300,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: 'rgba(0,0,0,0.1)',
-  },
-  practiceAreaText: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginTop: 12,
-  },
-  practiceAreaSubtext: {
-    fontSize: 12,
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  assessmentTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  assessmentDescription: {
-    fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  scorePreview: {
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  scoreLabel: {
-    fontSize: 14,
-  },
-  scoreValue: {
-    fontSize: 32,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  timeSpentContainer: {
+  hintButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 12,
+    marginTop: 16,
   },
-  timeSpentText: {
-    fontSize: 12,
-    marginLeft: 4,
+  hintButtonText: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '600',
   },
-  completionHeader: {
+  hintDisplay: {
+    flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 32,
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 16,
   },
-  completionIcon: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: 'center',
+  hintDisplayText: {
+    marginLeft: 8,
+    fontSize: 14,
+    flex: 1,
+  },
+  resultContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 20,
+    right: 20,
+    paddingBottom: 20,
+  },
+  resultCard: {
     alignItems: 'center',
-    marginBottom: 20,
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: 2,
+    marginBottom: 16,
   },
-  completionTitle: {
+  resultTitle: {
     fontSize: 24,
     fontWeight: '700',
-    marginBottom: 8,
+    marginTop: 12,
   },
-  completionSubtitle: {
+  explanation: {
     fontSize: 16,
     textAlign: 'center',
+    marginTop: 12,
+    lineHeight: 24,
   },
-  resultsCard: {
-    width: '100%',
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  resultLabel: {
-    fontSize: 14,
-  },
-  resultValue: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  achievementsCard: {
-    width: '100%',
-    padding: 20,
-    borderRadius: 12,
-  },
-  achievementsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  achievementItem: {
+  xpContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginTop: 12,
   },
-  achievementText: {
-    fontSize: 14,
-    marginLeft: 8,
+  xpText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 6,
   },
-  phaseActions: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
+  continueButton: {
+    alignItems: 'center',
     paddingVertical: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.1)',
+    borderRadius: 12,
   },
-  primaryButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    marginLeft: 8,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginHorizontal: 8,
-  },
-  secondaryButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    borderWidth: 1,
-    marginRight: 8,
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginHorizontal: 8,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  hintModal: {
-    width: '85%',
-    padding: 20,
-    borderRadius: 16,
-  },
-  hintModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  hintModalTitle: {
+  continueButtonText: {
     fontSize: 18,
-    fontWeight: '600',
-    flex: 1,
-    marginLeft: 8,
-  },
-  hintModalText: {
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 20,
-  },
-  hintModalButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  hintModalButtonText: {
-    fontSize: 16,
     fontWeight: '600',
   },
 });

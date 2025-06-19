@@ -1,41 +1,78 @@
-import { Lesson, LessonType, LessonStatus } from '../../types';
+import { Lesson, LessonType, LessonContent } from '../../types';
 
 /**
- * Drawing Fundamentals - Complete 15-lesson curriculum
- * Each lesson is 5-10 minutes with theory and practice
+ * FIXED LESSON SYSTEM - Compatible with existing types
+ * 
+ * This works with your existing Lesson interface by:
+ * 1. Keeping all existing properties (theoryContent, practiceContent, etc.)
+ * 2. Adding the new 'content' array for the lesson engine
+ * 3. Using proper LessonType values
  */
 
-export const drawingFundamentalsLessons: Lesson[] = [
+export const fundamentalLessons: Lesson[] = [
+  // LESSON 1: Theory Quiz
   {
-    id: 'lesson-lines-shapes',
-    title: 'Lines & Basic Shapes',
-    description: 'Master the foundation of all drawing - straight lines and perfect circles',
-    type: 'practice',
+    id: 'lesson-intro-theory',
+    title: 'Drawing Fundamentals Quiz',
+    description: 'Test your understanding of basic drawing principles',
+    type: 'theory' as LessonType,
     skillTree: 'drawing-fundamentals',
     order: 1,
-    estimatedTime: 8,
+    estimatedTime: 5,
     difficulty: 1,
     prerequisites: [],
+    
+    // NEW: Content array for modern lesson engine
+    content: [
+      {
+        id: 'shoulder-technique',
+        type: 'multiple_choice',
+        question: 'Which technique produces the straightest lines?',
+        options: [
+          'Drawing from the wrist',
+          'Drawing from the shoulder',
+          'Drawing with fingertips',
+          'Drawing very slowly'
+        ],
+        correctAnswer: 1,
+        explanation: 'Professional artists draw from their shoulder for long, controlled lines. The shoulder provides stability and smooth movement.',
+        hint: 'Think about which joint gives you the most control.',
+        xp: 15,
+      },
+      {
+        id: 'wrist-control',
+        type: 'true_false',
+        question: 'You should lock your wrist when drawing straight lines.',
+        correctAnswer: true,
+        explanation: 'Locking your wrist prevents wobbly lines and gives you better control.',
+        xp: 10,
+      },
+      {
+        id: 'circle-method',
+        type: 'multiple_choice',
+        question: 'What\'s the best way to draw a perfect circle?',
+        options: [
+          'Draw very slowly and carefully',
+          'Use your elbow as a pivot point',
+          'Start with a square first',
+          'Draw many small curves'
+        ],
+        correctAnswer: 1,
+        explanation: 'Using your elbow as a pivot creates natural circular motion.',
+        xp: 15,
+      }
+    ],
+    
+    // EXISTING: Keep original structure for backward compatibility
     objectives: [
       {
-        id: 'obj-1',
-        description: 'Draw 5 straight lines without lifting your pen',
+        id: 'theory-1',
+        description: 'Understand proper drawing technique',
         completed: false,
         required: true,
-      },
-      {
-        id: 'obj-2',
-        description: 'Create a perfect circle using the elbow technique',
-        completed: false,
-        required: true,
-      },
-      {
-        id: 'obj-3',
-        description: 'Draw basic shapes: square, triangle, oval',
-        completed: false,
-        required: true,
-      },
+      }
     ],
+    
     theoryContent: {
       segments: [
         {
@@ -44,26 +81,7 @@ export const drawingFundamentalsLessons: Lesson[] = [
           content: 'Every masterpiece starts with a single line. Today, you\'ll learn the secret that separates amateur from professional artists: controlled, confident strokes.',
           duration: 30,
           order: 1,
-        },
-        {
-          id: 'theory-2',
-          type: 'interactive',
-          content: {
-            demo: 'line-technique',
-            title: 'The Shoulder Technique',
-            instructions: 'Watch how professional artists draw from the shoulder, not the wrist. This gives you smooth, controlled lines.',
-          },
-          duration: 60,
-          order: 2,
-          interactive: true,
-        },
-        {
-          id: 'theory-3',
-          type: 'text',
-          content: 'Pro tip: Draw with your whole arm. Lock your wrist and move from your shoulder for long lines, elbow for medium lines.',
-          duration: 30,
-          order: 3,
-        },
+        }
       ],
       totalDuration: 120,
       objectives: [
@@ -75,44 +93,17 @@ export const drawingFundamentalsLessons: Lesson[] = [
         },
       ],
     },
+    
     practiceContent: {
       instructions: [
         {
           id: 'practice-1',
-          text: 'Draw 5 horizontal lines across your canvas. Focus on keeping them straight and parallel.',
+          text: 'Practice drawing straight lines using proper technique',
           type: 'draw',
           hint: 'Move from your shoulder, not your wrist!',
-          expectedResult: '5 straight horizontal lines',
-          validation: {
-            type: 'stroke-count',
-            params: { min: 5, max: 10 },
-          },
+          expectedResult: 'Straight controlled lines',
           order: 1,
-        },
-        {
-          id: 'practice-2',
-          text: 'Now draw 5 vertical lines. Try to make them the same length.',
-          type: 'draw',
-          hint: 'Keep your arm relaxed but controlled',
-          expectedResult: '5 vertical lines of similar length',
-          validation: {
-            type: 'stroke-count',
-            params: { min: 5, max: 10 },
-          },
-          order: 2,
-        },
-        {
-          id: 'practice-3',
-          text: 'Time for circles! Draw 3 circles using your elbow as a pivot point.',
-          type: 'draw',
-          hint: 'Don\'t worry about perfection - focus on the motion',
-          expectedResult: '3 circular shapes',
-          validation: {
-            type: 'shape-accuracy',
-            params: { targetShape: 'circle', threshold: 0.7 },
-          },
-          order: 3,
-        },
+        }
       ],
       hints: [
         {
@@ -129,72 +120,293 @@ export const drawingFundamentalsLessons: Lesson[] = [
       },
       expectedDuration: 5,
     },
+    
     rewards: {
-      xp: 50,
-      achievements: ['first_lesson'],
-      unlocks: ['lesson-shape-construction'],
+      xp: 40,
+      achievements: ['theory_master'],
+      unlocks: ['lesson-line-practice'],
     },
+    
     status: 'available',
     progress: 0,
     attempts: 0,
     timeSpent: 0,
-    tags: ['fundamentals', 'basics', 'lines', 'shapes'],
+    tags: ['theory', 'fundamentals', 'basics'],
   },
-  
+
+  // LESSON 2: Line Practice
   {
-    id: 'lesson-shape-construction',
-    title: 'Shape Construction',
-    description: 'Learn to break down complex objects into simple shapes',
-    type: 'practice',
+    id: 'lesson-line-practice',
+    title: 'Line Control Practice',
+    description: 'Master drawing straight lines and basic shapes',
+    type: 'practice' as LessonType,
     skillTree: 'drawing-fundamentals',
     order: 2,
-    estimatedTime: 10,
+    estimatedTime: 8,
     difficulty: 1,
-    prerequisites: ['lesson-lines-shapes'],
+    prerequisites: ['lesson-intro-theory'],
+    
+    // NEW: Drawing exercises content
+    content: [
+      {
+        id: 'horizontal-lines',
+        type: 'drawing_exercise',
+        instruction: 'Draw 5 straight horizontal lines',
+        hint: 'Use your shoulder, keep your wrist locked',
+        validation: {
+          type: 'line_count',
+          params: { target: 5 },
+          threshold: 0.8,
+        },
+        timeLimit: 90,
+        xp: 20,
+      },
+      {
+        id: 'vertical-lines',
+        type: 'drawing_exercise',
+        instruction: 'Draw 5 straight vertical lines',
+        hint: 'Keep them parallel and evenly spaced',
+        validation: {
+          type: 'line_count',
+          params: { target: 5 },
+          threshold: 0.8,
+        },
+        timeLimit: 90,
+        xp: 20,
+      },
+      {
+        id: 'circles',
+        type: 'drawing_exercise',
+        instruction: 'Draw 3 circles',
+        hint: 'Use your elbow as a pivot, don\'t worry about perfection',
+        validation: {
+          type: 'shape_accuracy',
+          params: { 
+            target: 'circle',
+            count: 3 
+          },
+          threshold: 0.6,
+        },
+        timeLimit: 120,
+        xp: 25,
+      }
+    ],
+    
+    // EXISTING: Original structure
     objectives: [
       {
-        id: 'obj-1',
-        description: 'Identify basic shapes in complex objects',
+        id: 'lines-1',
+        description: 'Draw controlled straight lines',
         completed: false,
         required: true,
       },
       {
-        id: 'obj-2',
-        description: 'Draw an apple using circles and curves',
+        id: 'circles-1',
+        description: 'Create basic circular shapes',
         completed: false,
         required: true,
-      },
+      }
     ],
+    
+    practiceContent: {
+      instructions: [
+        {
+          id: 'practice-1',
+          text: 'Draw 5 horizontal lines across your canvas. Focus on keeping them straight and parallel.',
+          type: 'draw',
+          hint: 'Move from your shoulder, not your wrist!',
+          expectedResult: '5 straight horizontal lines',
+          validation: {
+            type: 'stroke-count',
+            params: { min: 5, max: 10 },
+          },
+          order: 1,
+        },
+      ],
+      hints: [],
+      canvas: {
+        width: 800,
+        height: 600,
+        backgroundColor: '#FFFFFF',
+      },
+      expectedDuration: 8,
+    },
+    
+    rewards: {
+      xp: 65,
+      achievements: ['line_master'],
+      unlocks: ['lesson-color-theory'],
+    },
+    
+    status: 'locked',
+    progress: 0,
+    attempts: 0,
+    timeSpent: 0,
+    tags: ['practice', 'lines', 'shapes', 'fundamentals'],
+  },
+
+  // LESSON 3: Color Theory
+  {
+    id: 'lesson-color-theory',
+    title: 'Color Theory Basics',
+    description: 'Learn about primary colors, complements, and harmony',
+    type: 'theory' as LessonType,
+    skillTree: 'drawing-fundamentals',
+    order: 3,
+    estimatedTime: 6,
+    difficulty: 1,
+    prerequisites: ['lesson-line-practice'],
+    
+    // NEW: Color theory content
+    content: [
+      {
+        id: 'primary-colors',
+        type: 'multiple_choice',
+        question: 'What are the three primary colors?',
+        options: [
+          'Red, Green, Blue',
+          'Red, Yellow, Blue',
+          'Yellow, Orange, Red',
+          'Blue, Purple, Green'
+        ],
+        correctAnswer: 1,
+        explanation: 'Red, Yellow, and Blue are the primary colors - they cannot be created by mixing other colors.',
+        xp: 15,
+      },
+      {
+        id: 'complementary-red',
+        type: 'color_match',
+        question: 'Select the complementary color to red:',
+        options: ['#FF0000', '#00FF00', '#0000FF', '#FFFF00'],
+        correctAnswer: 1, // Green
+        explanation: 'Green is directly opposite red on the color wheel.',
+        xp: 20,
+      },
+      {
+        id: 'warm-colors',
+        type: 'multiple_choice',
+        question: 'Which colors are considered "warm"?',
+        options: [
+          'Blues and greens',
+          'Reds, oranges, and yellows',
+          'Purples and violets',
+          'Black and white'
+        ],
+        correctAnswer: 1,
+        explanation: 'Warm colors remind us of fire and sunlight. They tend to advance in compositions.',
+        xp: 15,
+      }
+    ],
+    
+    // EXISTING: Original structure
+    objectives: [
+      {
+        id: 'color-1',
+        description: 'Understand primary and complementary colors',
+        completed: false,
+        required: true,
+      }
+    ],
+    
     theoryContent: {
       segments: [
         {
           id: 'theory-1',
           type: 'text',
-          content: 'Every object in the world can be broken down into simple shapes. This is the secret skill that lets artists draw anything!',
+          content: 'Color is one of the most powerful tools in an artist\'s toolkit. Understanding color theory will help you create more compelling and harmonious artwork.',
           duration: 30,
           order: 1,
-        },
-        {
-          id: 'theory-2',
-          type: 'image',
-          content: {
-            url: 'shape-breakdown-demo',
-            title: 'From Shapes to Objects',
-          },
-          duration: 45,
-          order: 2,
-        },
+        }
       ],
-      totalDuration: 75,
+      totalDuration: 90,
       objectives: [
         {
           id: 'learn-1',
-          description: 'See objects as combinations of shapes',
+          description: 'Learn color wheel basics',
           type: 'primary',
           required: true,
         },
       ],
     },
+    
+    rewards: {
+      xp: 50,
+      achievements: ['color_theorist'],
+      unlocks: ['lesson-apple-construction'],
+    },
+    
+    status: 'locked',
+    progress: 0,
+    attempts: 0,
+    timeSpent: 0,
+    tags: ['theory', 'color', 'fundamentals'],
+  },
+
+  // LESSON 4: Guided Apple Drawing
+  {
+    id: 'lesson-apple-construction',
+    title: 'Draw an Apple',
+    description: 'Learn construction drawing by creating a simple apple',
+    type: 'practice' as LessonType, // Using 'practice' instead of 'guided'
+    skillTree: 'drawing-fundamentals',
+    order: 4,
+    estimatedTime: 12,
+    difficulty: 2,
+    prerequisites: ['lesson-color-theory'],
+    
+    // NEW: Guided step content
+    content: [
+      {
+        id: 'apple-circle',
+        type: 'guided_step',
+        instruction: 'Start with a circle for the apple body',
+        hint: 'Make it slightly wider than tall',
+        validation: {
+          type: 'shape_accuracy',
+          params: { target: 'circle' },
+          threshold: 0.7,
+        },
+        xp: 20,
+      },
+      {
+        id: 'apple-indent',
+        type: 'guided_step',
+        instruction: 'Add a small indent at the top',
+        hint: 'Where the stem connects to the apple',
+        validation: {
+          type: 'curve_detection',
+          params: { area: 'top_center' },
+          threshold: 0.6,
+        },
+        xp: 25,
+      },
+      {
+        id: 'apple-stem',
+        type: 'guided_step',
+        instruction: 'Draw a small stem',
+        hint: 'Just a short rectangle at the top',
+        validation: {
+          type: 'shape_accuracy',
+          params: { 
+            target: 'rectangle',
+            area: 'top_center'
+          },
+          threshold: 0.5,
+        },
+        xp: 30,
+      }
+    ],
+    
+    // EXISTING: Original structure
+    objectives: [
+      {
+        id: 'construction-1',
+        description: 'Apply construction drawing principles',
+        completed: false,
+        required: true,
+      }
+    ],
+    
     practiceContent: {
       instructions: [
         {
@@ -209,26 +421,6 @@ export const drawingFundamentalsLessons: Lesson[] = [
           },
           order: 1,
         },
-        {
-          id: 'practice-2',
-          text: 'Add a small indent at the top where the stem would be.',
-          type: 'draw',
-          hint: 'Just a gentle curve inward',
-          expectedResult: 'Circle with top indent',
-          order: 2,
-        },
-        {
-          id: 'practice-3',
-          text: 'Draw a small rectangle for the stem.',
-          type: 'draw',
-          hint: 'Keep it short and slightly tilted',
-          expectedResult: 'Complete apple shape',
-          validation: {
-            type: 'shape_completion',
-            params: { expectedTime: 180 },
-          },
-          order: 3,
-        },
       ],
       hints: [],
       canvas: {
@@ -236,250 +428,188 @@ export const drawingFundamentalsLessons: Lesson[] = [
         height: 600,
         backgroundColor: '#FFFFFF',
       },
-      expectedDuration: 7,
+      expectedDuration: 12,
     },
+    
     rewards: {
       xp: 75,
-      achievements: [],
-      unlocks: ['lesson-perspective-basics'],
+      achievements: ['constructor', 'apple_artist'],
+      unlocks: [], // End of fundamentals
     },
+    
     status: 'locked',
     progress: 0,
     attempts: 0,
     timeSpent: 0,
-    tags: ['fundamentals', 'shapes', 'construction'],
+    tags: ['guided', 'construction', 'objects'],
   },
-  
-  {
-    id: 'lesson-perspective-basics',
-    title: 'Perspective Basics',
-    description: 'Understand how to create depth with one-point perspective',
-    type: 'practice',
-    skillTree: 'drawing-fundamentals',
-    order: 3,
-    estimatedTime: 12,
-    difficulty: 2,
-    prerequisites: ['lesson-shape-construction'],
-    objectives: [
-      {
-        id: 'obj-1',
-        description: 'Draw a cube in one-point perspective',
-        completed: false,
-        required: true,
-      },
-      {
-        id: 'obj-2',
-        description: 'Create a sense of depth in your drawing',
-        completed: false,
-        required: true,
-      },
-    ],
-    theoryContent: {
-      segments: [
-        {
-          id: 'theory-1',
-          type: 'text',
-          content: 'Perspective is what makes drawings look 3D on a flat surface. Today, we\'ll unlock this superpower!',
-          duration: 30,
-          order: 1,
-        },
-        {
-          id: 'theory-2',
-          type: 'interactive',
-          content: {
-            demo: 'perspective-grid',
-            title: 'The Magic of Vanishing Points',
-            instructions: 'See how all lines converge to one point on the horizon',
-          },
-          duration: 90,
-          order: 2,
-          interactive: true,
-        },
-      ],
-      totalDuration: 120,
-      objectives: [
-        {
-          id: 'learn-1',
-          description: 'Understand vanishing points',
-          type: 'primary',
-          required: true,
-        },
-      ],
-    },
-    practiceContent: {
-      instructions: [
-        {
-          id: 'practice-1',
-          text: 'Draw a horizon line across the middle of your canvas.',
-          type: 'draw',
-          hint: 'Keep it straight and horizontal',
-          expectedResult: 'A horizontal line',
-          validation: {
-            type: 'line_detection',
-            params: { targetShape: 'horizontal' },
-          },
-          order: 1,
-        },
-        {
-          id: 'practice-2',
-          text: 'Place a dot on the horizon line - this is your vanishing point.',
-          type: 'draw',
-          hint: 'Put it slightly off-center for more interest',
-          expectedResult: 'Horizon line with vanishing point',
-          validation: {
-            type: 'point_placement',
-          },
-          order: 2,
-        },
-        {
-          id: 'practice-3',
-          text: 'Draw a square below the horizon line.',
-          type: 'draw',
-          hint: 'This will be the front face of your cube',
-          expectedResult: 'Square shape',
-          order: 3,
-        },
-        {
-          id: 'practice-4',
-          text: 'Connect the corners of your square to the vanishing point with light lines.',
-          type: 'draw',
-          hint: 'These are your perspective guidelines',
-          expectedResult: 'Square with perspective lines',
-          validation: {
-            type: 'perspective_lines',
-            params: { minLines: 4 },
-          },
-          order: 4,
-        },
-      ],
-      hints: [],
-      canvas: {
-        width: 800,
-        height: 600,
-        backgroundColor: '#FFFFFF',
-      },
-      expectedDuration: 8,
-    },
-    rewards: {
-      xp: 100,
-      achievements: ['perspective_pioneer'],
-      unlocks: ['lesson-light-shadow'],
-    },
-    status: 'locked',
-    progress: 0,
-    attempts: 0,
-    timeSpent: 0,
-    tags: ['fundamentals', 'perspective', '3D'],
-  },
-  
-  // Continue with remaining lessons...
-  {
-    id: 'lesson-light-shadow',
-    title: 'Light & Shadow',
-    description: 'Bring your drawings to life with realistic shading',
-    type: 'practice',
-    skillTree: 'drawing-fundamentals',
-    order: 4,
-    estimatedTime: 10,
-    difficulty: 2,
-    prerequisites: ['lesson-perspective-basics'],
-    objectives: [
-      {
-        id: 'obj-1',
-        description: 'Shade a sphere to show form',
-        completed: false,
-        required: true,
-      },
-    ],
-    theoryContent: {
-      segments: [
-        {
-          id: 'theory-1',
-          type: 'text',
-          content: 'Light and shadow transform flat shapes into 3D forms. This is where your drawings come alive!',
-          duration: 30,
-          order: 1,
-        },
-      ],
-      totalDuration: 30,
-      objectives: [
-        {
-          id: 'learn-1',
-          description: 'Understand light source and shadow placement',
-          type: 'primary',
-          required: true,
-        },
-      ],
-    },
-    practiceContent: {
-      instructions: [
-        {
-          id: 'practice-1',
-          text: 'Draw a circle - this will be our sphere.',
-          type: 'draw',
-          hint: 'Make it nice and round',
-          expectedResult: 'A circular shape',
-          validation: {
-            type: 'shape-accuracy',
-            params: { targetShape: 'circle', threshold: 0.7 },
-          },
-          order: 1,
-        },
-        {
-          id: 'practice-2',
-          text: 'Imagine light coming from the top-left. Shade the bottom-right of the sphere.',
-          type: 'draw',
-          hint: 'Start light and gradually get darker',
-          expectedResult: 'Shaded sphere',
-          validation: {
-            type: 'shading_element',
-            params: { expectedArea: 'bottom-right' },
-          },
-          order: 2,
-        },
-      ],
-      hints: [],
-      canvas: {
-        width: 800,
-        height: 600,
-        backgroundColor: '#FFFFFF',
-      },
-      expectedDuration: 8,
-    },
-    rewards: {
-      xp: 100,
-      achievements: [],
-      unlocks: ['lesson-form-volume'],
-    },
-    status: 'locked',
-    progress: 0,
-    attempts: 0,
-    timeSpent: 0,
-    tags: ['fundamentals', 'shading', 'light'],
-  },
-  
-  // Additional lessons would continue here...
-  // For MVP, let's have these 4 core lessons ready
 ];
 
-// Helper function to get all fundamental lessons
+// =================== HELPER FUNCTIONS ===================
+
 export function getFundamentalLessons(): Lesson[] {
-  return drawingFundamentalsLessons;
+  return fundamentalLessons;
 }
 
-// Helper function to get lesson by ID
 export function getLessonById(lessonId: string): Lesson | null {
-  return drawingFundamentalsLessons.find(lesson => lesson.id === lessonId) || null;
+  return fundamentalLessons.find(lesson => lesson.id === lessonId) || null;
 }
 
-// Helper function to check if lesson is available
 export function isLessonAvailable(lessonId: string, completedLessons: string[]): boolean {
   const lesson = getLessonById(lessonId);
   if (!lesson) return false;
   
-  // First lesson is always available
   if (lesson.prerequisites.length === 0) return true;
   
-  // Check if all prerequisites are completed
   return lesson.prerequisites.every(prereq => completedLessons.includes(prereq));
 }
+
+// =================== EASY LESSON CREATION HELPERS ===================
+
+export function createTheoryLesson(config: {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  prerequisites: string[];
+  questions: any[];
+  tags?: string[];
+}): Lesson {
+  const totalXP = config.questions.reduce((sum, q) => sum + (q.xp || 10), 0);
+  
+  return {
+    ...config,
+    type: 'theory' as LessonType,
+    skillTree: 'drawing-fundamentals',
+    estimatedTime: Math.max(3, Math.min(10, config.questions.length * 1.5)),
+    difficulty: 1,
+    
+    // NEW: Content array
+    content: config.questions,
+    
+    // EXISTING: Original structure
+    objectives: [
+      {
+        id: `${config.id}-obj`,
+        description: `Complete ${config.title}`,
+        completed: false,
+        required: true,
+      }
+    ],
+    
+    theoryContent: {
+      segments: [
+        {
+          id: `${config.id}-segment`,
+          type: 'text',
+          content: config.description,
+          duration: 30,
+          order: 1,
+        }
+      ],
+      totalDuration: 30,
+      objectives: [],
+    },
+    
+    rewards: {
+      xp: totalXP,
+      achievements: [`${config.id.replace('lesson-', '')}_master`],
+      unlocks: [],
+    },
+    status: 'locked',
+    progress: 0,
+    attempts: 0,
+    timeSpent: 0,
+    tags: config.tags || ['theory'],
+  };
+}
+
+export function createPracticeLesson(config: {
+  id: string;
+  title: string;
+  description: string;
+  order: number;
+  prerequisites: string[];
+  exercises: any[];
+  tags?: string[];
+}): Lesson {
+  const totalXP = config.exercises.reduce((sum, e) => sum + (e.xp || 15), 0);
+  
+  return {
+    ...config,
+    type: 'practice' as LessonType,
+    skillTree: 'drawing-fundamentals',
+    estimatedTime: Math.max(5, Math.min(15, config.exercises.length * 3)),
+    difficulty: 1,
+    
+    // NEW: Content array
+    content: config.exercises,
+    
+    // EXISTING: Original structure
+    objectives: [
+      {
+        id: `${config.id}-obj`,
+        description: `Complete ${config.title}`,
+        completed: false,
+        required: true,
+      }
+    ],
+    
+    practiceContent: {
+      instructions: config.exercises.map((exercise, index) => ({
+        id: exercise.id || `instruction-${index}`,
+        text: exercise.instruction || exercise.text || 'Practice exercise',
+        type: 'draw',
+        hint: exercise.hint,
+        expectedResult: 'Complete the exercise',
+        order: index + 1,
+      })),
+      hints: [],
+      canvas: {
+        width: 800,
+        height: 600,
+        backgroundColor: '#FFFFFF',
+      },
+      expectedDuration: Math.max(5, config.exercises.length * 2),
+    },
+    
+    rewards: {
+      xp: totalXP,
+      achievements: [`${config.id.replace('lesson-', '')}_master`],
+      unlocks: [],
+    },
+    status: 'locked',
+    progress: 0,
+    attempts: 0,
+    timeSpent: 0,
+    tags: config.tags || ['practice'],
+  };
+}
+
+// =================== ADDING NEW LESSONS IS EASY ===================
+
+/*
+EXAMPLE: Add a new lesson like this:
+
+const newLesson = createTheoryLesson({
+  id: 'lesson-perspective-advanced',
+  title: 'Advanced Perspective',
+  description: 'Master 2-point and 3-point perspective',
+  order: 5,
+  prerequisites: ['lesson-apple-construction'],
+  questions: [
+    {
+      id: 'two-point-perspective',
+      type: 'multiple_choice',
+      question: 'In two-point perspective, what remains vertical?',
+      options: ['Nothing', 'Vertical edges', 'Horizontal edges', 'All edges'],
+      correctAnswer: 1,
+      explanation: 'Vertical edges remain vertical in two-point perspective.',
+      xp: 20,
+    }
+  ],
+  tags: ['advanced', 'perspective'],
+});
+
+fundamentalLessons.push(newLesson);
+*/

@@ -64,7 +64,7 @@ export default function SettingsScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { user, progress } = useUserProgress();
-  
+
   const [settings, setSettings] = useState<AppSettings>({
     theme: 'auto',
     notifications: {
@@ -122,23 +122,31 @@ export default function SettingsScreen() {
       const newSettings = { ...prev };
       const keys = path.split('.');
       let current: any = newSettings;
-      
+
       for (let i = 0; i < keys.length - 1; i++) {
         current = current[keys[i]];
       }
-      
+
       current[keys[keys.length - 1]] = value;
-      
+
       // Save to storage
       saveSettings(newSettings);
-      
+
       return newSettings;
     });
   }, []);
 
+  // DARK MODE PATCH HERE:
   const handleThemeChange = (newTheme: 'auto' | 'light' | 'dark') => {
     updateSetting('theme', newTheme);
-    // Note: Theme will automatically update when settings change
+
+    // Fix: Update theme context directly
+    if (newTheme === 'auto') {
+      theme.setThemeMode('system');
+    } else {
+      theme.setThemeMode(newTheme);
+    }
+
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 

@@ -1,5 +1,6 @@
+// app/_layout.tsx - PRODUCTION GRADE WITH CRASH PREVENTION
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Text, View, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { FadeIn } from 'react-native-reanimated';
@@ -11,20 +12,16 @@ import { UserProgressProvider } from '../src/contexts/UserProgressContext';
 import { DrawingProvider } from '../src/contexts/DrawingContext';
 import { LearningProvider } from '../src/contexts/LearningContext';
 
-// Engines
-import { skillTreeManager } from '../src/engines/learning/SkillTreeManager';
-import { lessonEngine } from '../src/engines/learning/LessonEngine';
-import { challengeSystem } from '../src/engines/community/ChallengeSystem';
-import { brushEngine } from '../src/engines/drawing/BrushEngine';
-import { errorHandler } from '../src/engines/core/ErrorHandler';
-import { performanceMonitor } from '../src/engines/core/PerformanceMonitor';
+// Initialize app
+import { AppInitializer } from '../src/utils/appInitializer';
 
 // Components
 import { ErrorBoundary } from '../src/engines/core/ErrorBoundary';
 
 export default function RootLayout() {
   const [isInitialized, setIsInitialized] = useState(false);
-  const [initializationError, setInitializationError] = useState<string | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [initWarnings, setInitWarnings] = useState<string[]>([]);
   const router = useRouter();
 
   useEffect(() => {
@@ -32,88 +29,38 @@ export default function RootLayout() {
 
     const initializeApp = async () => {
       try {
-        console.log('🚀 App Index: Starting application initialization...');
+        console.log('🚀 Starting Pikaso initialization...');
         
-        // Initialize core systems first
-        console.log('🎯 Initializing core systems...');
-        performanceMonitor.startMonitoring();
+        // Use the new centralized initializer
+        const result = await AppInitializer.initialize();
         
-        // Initialize learning systems with proper error handling
-        console.log('🎓 Initializing learning system...');
-        try {
-          await skillTreeManager.initialize();
-          await lessonEngine.initialize();
-          console.log('✅ Learning system initialized successfully');
-        } catch (error) {
-          console.error('❌ Failed to initialize learning system:', error);
-          errorHandler.handleError(
-            errorHandler.createError(
-              'LEARNING_INIT_ERROR',
-              'Failed to initialize learning system',
-              'high',
-              error
-            )
-          );
-          throw error;
-        }
-
-        // Initialize drawing system
-        console.log('🎨 Initializing drawing system...');
-        try {
-          // Brush engine doesn't need async initialization, but we ensure it's ready
-          const allBrushes = brushEngine.getAllBrushes();
-          console.log(`✅ Drawing system initialized with ${allBrushes.length} brushes`);
-        } catch (error) {
-          console.error('❌ Failed to initialize drawing system:', error);
-          errorHandler.handleError(
-            errorHandler.createError(
-              'DRAWING_INIT_ERROR',
-              'Failed to initialize drawing system',
-              'medium',
-              error
-            )
-          );
-        }
-
-        // Initialize challenge system
-        console.log('🏆 Initializing challenge system...');
-        try {
-          // Challenge system initializes automatically, just verify it's ready
-          const activeChallenges = challengeSystem.getAllActiveChallenges();
-          console.log(`✅ Challenge system initialized with ${activeChallenges.length} active challenges`);
-        } catch (error) {
-          console.error('❌ Failed to initialize challenge system:', error);
-          errorHandler.handleError(
-            errorHandler.createError(
-              'CHALLENGE_INIT_ERROR',
-              'Failed to initialize challenge system',
-              'low',
-              error
-            )
-          );
-        }
-
-        if (mounted) {
+        if (!mounted) return;
+        
+        if (result.success) {
           setIsInitialized(true);
-          console.log('🎉 App initialization completed successfully');
           
-          // Log performance metrics
-          const metrics = performanceMonitor.getMetrics();
-          console.log('📊 Performance metrics:', metrics);
-        }
-
-      } catch (error) {
-        console.error('💥 App initialization failed:', error);
-        
-        if (mounted) {
-          setInitializationError(
-            error instanceof Error ? error.message : 'Unknown initialization error'
-          );
-        }
-        
-        // Still set as initialized to allow basic app functionality
-        if (mounted) {
+          if (result.warnings.length > 0) {
+            setInitWarnings(result.warnings);
+            console.warn('⚠️ Initialization warnings:', result.warnings);
+          }
+          
+          console.log('✅ App ready!');
+        } else {
+          // App can still run with errors, just with limited functionality
           setIsInitialized(true);
+          setInitError(result.errors[0] || 'Unknown initialization error');
+          setInitWarnings(result.warnings);
+          
+          console.error('❌ Initialization had errors but app will continue');
+        }
+        
+      } catch (error) {
+        console.error('💥 Critical initialization failure:', error);
+        
+        if (mounted) {
+          // Still allow app to run
+          setIsInitialized(true);
+          setInitError(error instanceof Error ? error.message : 'Critical initialization error');
         }
       }
     };
@@ -122,6 +69,8 @@ export default function RootLayout() {
 
     return () => {
       mounted = false;
+      // Cleanup on unmount
+      AppInitializer.cleanup();
     };
   }, []);
 
@@ -133,33 +82,34 @@ export default function RootLayout() {
         alignItems: 'center',
         backgroundColor: '#000000',
       }}>
-        <Animated.View entering={FadeIn}>
+        <Animated.View 
+          entering={FadeIn}
+          style={{ alignItems: 'center' }}
+        >
           <Text style={{ 
             color: '#FFFFFF', 
-            fontSize: 24, 
+            fontSize: 32, 
             fontWeight: '700',
-            marginBottom: 16,
+            marginBottom: 8,
+            letterSpacing: -1,
           }}>
             Pikaso
           </Text>
           <Text style={{ 
             color: '#CCCCCC', 
             fontSize: 16,
-            textAlign: 'center',
+            marginBottom: 32,
           }}>
-            Initializing learning platform...
+            Master the art of drawing
           </Text>
-          {initializationError && (
-            <Text style={{ 
-              color: '#FF6B6B', 
-              fontSize: 12,
-              textAlign: 'center',
-              marginTop: 8,
-              maxWidth: 300,
-            }}>
-              Warning: {initializationError}
-            </Text>
-          )}
+          <ActivityIndicator size="large" color="#FFFFFF" />
+          <Text style={{ 
+            color: '#888888', 
+            fontSize: 14,
+            marginTop: 16,
+          }}>
+            Initializing engines...
+          </Text>
         </Animated.View>
       </View>
     );
@@ -167,20 +117,95 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ErrorBoundary>
+      <ErrorBoundary
+        fallback={(error) => (
+          <View style={{ 
+            flex: 1, 
+            justifyContent: 'center', 
+            alignItems: 'center',
+            backgroundColor: '#f5f5f5',
+            padding: 40,
+          }}>
+            <Text style={{ fontSize: 24, marginBottom: 16 }}>😔</Text>
+            <Text style={{ fontSize: 18, fontWeight: '600', marginBottom: 8 }}>
+              Something went wrong
+            </Text>
+            <Text style={{ fontSize: 14, color: '#666', textAlign: 'center' }}>
+              {error?.message || 'An unexpected error occurred'}
+            </Text>
+          </View>
+        )}
+      >
         <ThemeProvider>
           <UserProgressProvider>
             <DrawingProvider>
               <LearningProvider>
                 <StatusBar style="auto" />
-                <Stack screenOptions={{ headerShown: false }}>
+                
+                {/* Show warnings banner if any */}
+                {(initError || initWarnings.length > 0) && (
+                  <View style={{
+                    position: 'absolute',
+                    top: 60,
+                    left: 20,
+                    right: 20,
+                    backgroundColor: initError ? '#ff6b6b' : '#ffd93d',
+                    padding: 12,
+                    borderRadius: 8,
+                    zIndex: 1000,
+                  }}>
+                    <Text style={{
+                      color: initError ? '#fff' : '#333',
+                      fontSize: 12,
+                      fontWeight: '600',
+                    }}>
+                      {initError ? '⚠️ Limited functionality' : 'ℹ️ Notice'}
+                    </Text>
+                    <Text style={{
+                      color: initError ? '#fff' : '#333',
+                      fontSize: 11,
+                      marginTop: 4,
+                    }}>
+                      {initError || initWarnings[0]}
+                    </Text>
+                  </View>
+                )}
+                
+                <Stack 
+                  screenOptions={{ 
+                    headerShown: false,
+                    animation: 'slide_from_right',
+                  }}
+                >
                   <Stack.Screen name="index" />
                   <Stack.Screen name="onboarding" />
                   <Stack.Screen name="(tabs)" />
-                  <Stack.Screen name="lesson/[id]" />
-                  <Stack.Screen name="drawing/[id]" />
-                  <Stack.Screen name="profile/[id]" />
-                  <Stack.Screen name="settings" />
+                  <Stack.Screen 
+                    name="lesson/[id]" 
+                    options={{ 
+                      presentation: 'modal',
+                      animation: 'slide_from_bottom',
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="drawing/[id]"
+                    options={{ 
+                      presentation: 'fullScreenModal',
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="profile/[id]"
+                    options={{ 
+                      animation: 'slide_from_bottom',
+                    }} 
+                  />
+                  <Stack.Screen 
+                    name="settings"
+                    options={{ 
+                      presentation: 'modal',
+                      animation: 'slide_from_bottom',
+                    }} 
+                  />
                 </Stack>
               </LearningProvider>
             </DrawingProvider>

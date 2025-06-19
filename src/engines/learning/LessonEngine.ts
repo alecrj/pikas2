@@ -1,39 +1,40 @@
 import { 
   Lesson, 
-  TheorySegment, 
-  PracticeInstruction, 
-  Assessment,
-  ValidationRule,
-  LearningObjective 
+  LessonContent,
+  LessonProgress,
+  ValidationResult,
 } from '../../types';
 import { dataManager } from '../core/DataManager';
 import { errorHandler } from '../core/ErrorHandler';
-import { progressionSystem } from '../user/ProgressionSystem';
-import { performanceMonitor } from '../core/PerformanceMonitor';
+import { EventBus } from '../core/EventBus';
 
 /**
- * Scalable lesson delivery system that handles theory, practice, and assessment
- * Optimized for seamless learning experience with real-time guidance
+ * COMMERCIAL GRADE LESSON ENGINE
+ * 
+ * Handles ANY lesson type:
+ * - Theory quizzes (multiple choice, true/false, color matching)
+ * - Drawing exercises (with validation)
+ * - Guided practice (step-by-step tutorials)
+ * - Video lessons (interactive videos)
+ * - Assessment tests
+ * 
+ * EASILY EXTENSIBLE: Just add new content types to the handlers
  */
 export class LessonEngine {
   private static instance: LessonEngine;
+  private eventBus: EventBus = EventBus.getInstance();
+  
   private currentLesson: Lesson | null = null;
-  private lessonState: LessonState = {
-    phase: 'not_started',
-    theoryProgress: 0,
-    practiceProgress: 0,
-    startTime: null,
-    pausedTime: 0,
-    completedObjectives: [],
-    currentInstruction: 0,
-    validationResults: new Map(),
-  };
-  private lessonListeners: Set<(state: LessonState) => void> = new Set();
-  private practiceValidators: Map<string, ValidationFunction> = new Map();
-  private isInitialized: boolean = false;
-
+  private lessonProgress: LessonProgress | null = null;
+  private contentIndex: number = 0;
+  private startTime: number = 0;
+  private sessionData: any = {};
+  
+  // Content handlers for different lesson types
+  private contentHandlers: Map<string, ContentHandler> = new Map();
+  
   private constructor() {
-    // Initialization happens in initialize() method
+    this.initializeHandlers();
   }
 
   public static getInstance(): LessonEngine {
@@ -43,615 +44,603 @@ export class LessonEngine {
     return LessonEngine.instance;
   }
 
-  public async initialize(): Promise<void> {
-    if (this.isInitialized) {
-      return;
-    }
+  // =================== INITIALIZATION ===================
 
-    this.initializeValidators();
-    this.isInitialized = true;
-    console.log('LessonEngine initialized');
-  }
-
-  private initializeValidators(): void {
-    // Stroke count validator
-    this.practiceValidators.set('stroke_count', (rule: ValidationRule, data: any) => {
-      if (!rule.params?.min || !rule.params?.max) return true;
-      const strokeCount = data.strokes?.length || 0;
-      return strokeCount >= rule.params.min && strokeCount <= rule.params.max;
-    });
-
-    // Color match validator
-    this.practiceValidators.set('color_match', (rule: ValidationRule, data: any) => {
-      if (!rule.params?.targetColor || !rule.threshold) return true;
-      const targetColor = rule.params.targetColor;
-      const usedColors = data.colors || [];
-      return usedColors.some((color: string) => 
-        this.colorDistance(color, targetColor) < (rule.threshold || 0.1)
-      );
-    });
-
-    // Shape accuracy validator
-    this.practiceValidators.set('shape_accuracy', (rule: ValidationRule, data: any) => {
-      if (!rule.params?.targetShape || !rule.threshold) return true;
-      const accuracy = this.calculateShapeAccuracy(data.strokes, rule.params.targetShape);
-      return accuracy >= rule.threshold;
-    });
-
-    // Completion validator
-    this.practiceValidators.set('completion', (rule: ValidationRule, data: any) => {
-      if (!rule.threshold) return true;
-      const completionRate = data.completionRate || 0;
-      return completionRate >= rule.threshold;
-    });
-
-    // Additional validators for SkillTreeManager compatibility
-    this.practiceValidators.set('shape_construction', (rule: ValidationRule, data: any) => {
-      return this.validateShapeConstruction(data.strokes, rule.params || {});
-    });
-
-    this.practiceValidators.set('line_detection', (rule: ValidationRule, data: any) => {
-      return this.validateLineDetection(data.strokes, rule.params || {});
-    });
-
-    this.practiceValidators.set('point_placement', (rule: ValidationRule, data: any) => {
-      return this.validatePointPlacement(data.points, rule.params || {});
-    });
-
-    this.practiceValidators.set('perspective_lines', (rule: ValidationRule, data: any) => {
-      return this.validatePerspectiveLines(data.strokes, rule.params || {});
-    });
-
-    this.practiceValidators.set('shape_completion', (rule: ValidationRule, data: any) => {
-      return this.validateShapeCompletion(data.strokes, rule.params || {});
-    });
-
-    this.practiceValidators.set('shading_element', (rule: ValidationRule, data: any) => {
-      return this.validateShadingElement(data.strokes, rule.params || {});
-    });
-
-    this.practiceValidators.set('shading_gradation', (rule: ValidationRule, data: any) => {
-      return this.validateShadingGradation(data.strokes, rule.params || {});
-    });
-
-    this.practiceValidators.set('cast_shadow', (rule: ValidationRule, data: any) => {
-      return this.validateCastShadow(data.strokes, rule.params || {});
-    });
-
-    this.practiceValidators.set('cylindrical_shading', (rule: ValidationRule, data: any) => {
-      return this.validateCylindricalShading(data.strokes, rule.params || {});
-    });
-
-    this.practiceValidators.set('form_construction', (rule: ValidationRule, data: any) => {
-      return this.validateFormConstruction(data.strokes, rule.params || {});
-    });
-  }
-
-  // Added missing validateStep method that contexts expect
-  public async validateStep(lesson: Lesson, stepIndex: number, userInput: any): Promise<{
-    isValid: boolean;
-    feedback?: string;
-    hint?: string;
-    score?: number;
-  }> {
-    if (!lesson.practiceContent.instructions[stepIndex]) {
-      return { isValid: false, feedback: 'Invalid step index' };
-    }
-
-    const instruction = lesson.practiceContent.instructions[stepIndex];
+  private initializeHandlers(): void {
+    // Theory question handlers
+    this.contentHandlers.set('multiple_choice', new MultipleChoiceHandler());
+    this.contentHandlers.set('true_false', new TrueFalseHandler());
+    this.contentHandlers.set('color_match', new ColorMatchHandler());
+    this.contentHandlers.set('visual_selection', new VisualSelectionHandler());
     
-    if (!instruction.validation) {
-      // No validation rule, consider it valid
-      return { isValid: true, score: 1.0 };
-    }
-
-    const isValid = this.validateInstruction(instruction.validation, userInput);
+    // Drawing exercise handlers
+    this.contentHandlers.set('drawing_exercise', new DrawingExerciseHandler());
+    this.contentHandlers.set('guided_step', new GuidedStepHandler());
+    this.contentHandlers.set('shape_practice', new ShapePracticeHandler());
     
-    if (isValid) {
-      return { 
-        isValid: true, 
-        score: 1.0,
-        feedback: 'Great work! Continue to the next step.' 
-      };
-    } else {
-      // Find appropriate hint
-      const hint = lesson.practiceContent.hints.find(h => 
-        h.triggerCondition === `instruction_${stepIndex}_fail`
-      );
-      
-      return {
-        isValid: false,
-        score: 0.5,
-        feedback: 'Not quite right. Try following the guide more closely.',
-        hint: hint?.content
-      };
-    }
+    // Advanced content handlers
+    this.contentHandlers.set('video_lesson', new VideoLessonHandler());
+    this.contentHandlers.set('assessment', new AssessmentHandler());
+    this.contentHandlers.set('portfolio_project', new PortfolioProjectHandler());
+    
+    console.log(`✅ Initialized ${this.contentHandlers.size} content handlers`);
   }
 
-  // Validation helper methods
-  private validateShapeConstruction(strokes: any[], params: any): boolean {
-    // Check if strokes form the required shape components
-    return strokes.length >= (params.minShapes || 1);
-  }
-
-  private validateLineDetection(strokes: any[], params: any): boolean {
-    // Check for straight lines in strokes
-    return strokes.some(stroke => this.isLineStraight(stroke, params.straightnessThreshold || 0.9));
-  }
-
-  private validatePointPlacement(points: any[], params: any): boolean {
-    // Check if points are placed in correct positions
-    return points && points.length >= (params.minPoints || 1);
-  }
-
-  private validatePerspectiveLines(strokes: any[], params: any): boolean {
-    // Check if lines converge to vanishing point
-    return strokes.length >= (params.minLines || 2);
-  }
-
-  private validateShapeCompletion(strokes: any[], params: any): boolean {
-    // Check if shape is completed (endpoints connect)
-    return strokes.some(stroke => this.isShapeClosed(stroke, params.closureThreshold || 0.1));
-  }
-
-  private validateShadingElement(strokes: any[], params: any): boolean {
-    // Check for shading patterns
-    return strokes.some(stroke => this.hasShadingPattern(stroke));
-  }
-
-  private validateShadingGradation(strokes: any[], params: any): boolean {
-    // Check for gradient in shading
-    return strokes.some(stroke => this.hasGradientPattern(stroke));
-  }
-
-  private validateCastShadow(strokes: any[], params: any): boolean {
-    // Check for cast shadow elements
-    return strokes.length > 0; // Simplified
-  }
-
-  private validateCylindricalShading(strokes: any[], params: any): boolean {
-    // Check for cylindrical form shading
-    return strokes.length > 0; // Simplified
-  }
-
-  private validateFormConstruction(strokes: any[], params: any): boolean {
-    // Check for 3D form construction
-    return strokes.length >= (params.minStrokes || 3);
-  }
-
-  private isLineStraight(stroke: any, threshold: number): boolean {
-    // Simplified line straightness check
-    return stroke.points && stroke.points.length >= 2;
-  }
-
-  private isShapeClosed(stroke: any, threshold: number): boolean {
-    // Check if shape endpoints are close enough
-    if (!stroke.points || stroke.points.length < 3) return false;
-    const first = stroke.points[0];
-    const last = stroke.points[stroke.points.length - 1];
-    const distance = Math.sqrt(Math.pow(last.x - first.x, 2) + Math.pow(last.y - first.y, 2));
-    return distance <= threshold * 100; // Scale threshold appropriately
-  }
-
-  private hasShadingPattern(stroke: any): boolean {
-    // Check for shading characteristics
-    return stroke.opacity && stroke.opacity < 1.0;
-  }
-
-  private hasGradientPattern(stroke: any): boolean {
-    // Check for gradient characteristics
-    return stroke.points && stroke.points.length > 5; // Multiple overlapping strokes
-  }
+  // =================== MAIN LESSON FLOW ===================
 
   public async startLesson(lesson: Lesson): Promise<void> {
     try {
-      performanceMonitor.resetDrawCalls();
+      console.log(`🎓 Starting lesson: ${lesson.title}`);
       
       this.currentLesson = lesson;
-      this.lessonState = {
-        phase: 'theory',
-        theoryProgress: 0,
-        practiceProgress: 0,
-        startTime: Date.now(),
-        pausedTime: 0,
-        completedObjectives: [],
-        currentInstruction: 0,
-        validationResults: new Map(),
+      this.contentIndex = 0;
+      this.startTime = Date.now();
+      this.sessionData = {
+        answers: new Map(),
+        attempts: new Map(),
+        timeSpent: new Map(),
+        score: 0,
+        maxScore: 0,
       };
-
-      // Preload lesson assets
-      await this.preloadLessonAssets(lesson);
-
-      // Track lesson start
-      await dataManager.set(`lesson_start_${lesson.id}`, {
-        timestamp: Date.now(),
-        userId: await this.getCurrentUserId(),
+      
+      // Initialize progress
+      this.lessonProgress = {
+        lessonId: lesson.id,
+        contentProgress: 0,
+        currentContentIndex: 0,
+        totalContent: lesson.content.length,
+        score: 0,
+        timeSpent: 0,
+        completed: false,
+        startedAt: new Date().toISOString(),
+      };
+      
+      // Emit lesson started event
+      this.eventBus.emit('lesson:started', { 
+        lessonId: lesson.id,
+        lessonType: lesson.type,
+        contentCount: lesson.content.length
       });
-
-      this.notifyListeners();
+      
+      // Calculate max possible score
+      this.sessionData.maxScore = lesson.content.reduce((sum, content) => {
+        return sum + (content.xp || 10);
+      }, 0);
+      
+      console.log(`📊 Lesson started - ${lesson.content.length} content items, max score: ${this.sessionData.maxScore}`);
+      
     } catch (error) {
-      errorHandler.handleError(
-        errorHandler.createError('LESSON_START_ERROR', 'Failed to start lesson', 'medium', error)
-      );
+      console.error('❌ Failed to start lesson:', error);
       throw error;
     }
   }
 
-  private async preloadLessonAssets(lesson: Lesson): Promise<void> {
-    const preloadPromises: Promise<void>[] = [];
+  public getCurrentContent(): LessonContent | null {
+    if (!this.currentLesson || this.contentIndex >= this.currentLesson.content.length) {
+      return null;
+    }
+    return this.currentLesson.content[this.contentIndex];
+  }
 
-    // Preload theory content images/videos
-    lesson.theoryContent.segments.forEach(segment => {
-      if (segment.type === 'image' || segment.type === 'video') {
-        // Handle both string and object content types
-        if (typeof segment.content === 'object' && segment.content.url) {
-          preloadPromises.push(this.preloadAsset(segment.content.url));
-        }
+  public getLessonProgress(): LessonProgress | null {
+    return this.lessonProgress;
+  }
+
+  public getSessionData(): any {
+    return { ...this.sessionData };
+  }
+
+  // =================== CONTENT INTERACTION ===================
+
+  public async submitAnswer(contentId: string, answer: any): Promise<ValidationResult> {
+    if (!this.currentLesson || !this.lessonProgress) {
+      throw new Error('No active lesson');
+    }
+
+    try {
+      const currentContent = this.getCurrentContent();
+      if (!currentContent || currentContent.id !== contentId) {
+        throw new Error('Content mismatch');
       }
-    });
 
-    // Preload practice reference image
-    if (lesson.practiceContent.referenceImage) {
-      preloadPromises.push(this.preloadAsset(lesson.practiceContent.referenceImage));
-    }
+      console.log(`📝 Submitting answer for ${contentId}:`, answer);
 
-    await Promise.all(preloadPromises);
-  }
+      // Get appropriate handler
+      const handler = this.contentHandlers.get(currentContent.type);
+      if (!handler) {
+        throw new Error(`No handler for content type: ${currentContent.type}`);
+      }
 
-  private async preloadAsset(url: string): Promise<void> {
-    // In production, this would actually preload the asset
-    // For now, it's a placeholder
-    return Promise.resolve();
-  }
+      // Track attempt
+      const attemptCount = (this.sessionData.attempts.get(contentId) || 0) + 1;
+      this.sessionData.attempts.set(contentId, attemptCount);
 
-  public progressTheory(segmentIndex: number): void {
-    if (!this.currentLesson || this.lessonState.phase !== 'theory') return;
-
-    const totalSegments = this.currentLesson.theoryContent.segments.length;
-    this.lessonState.theoryProgress = ((segmentIndex + 1) / totalSegments) * 100;
-
-    if (segmentIndex >= totalSegments - 1) {
-      this.lessonState.phase = 'ready_for_practice';
-    }
-
-    this.notifyListeners();
-  }
-
-  public startPractice(): void {
-    if (!this.currentLesson || this.lessonState.phase !== 'ready_for_practice') return;
-
-    this.lessonState.phase = 'practice';
-    this.lessonState.currentInstruction = 0;
-    this.notifyListeners();
-  }
-
-  public progressPractice(instructionIndex: number, drawingData: any): void {
-    if (!this.currentLesson || this.lessonState.phase !== 'practice') return;
-
-    const instruction = this.currentLesson.practiceContent.instructions[instructionIndex];
-    
-    // Validate if instruction has validation rules
-    if (instruction.validation) {
-      const isValid = this.validateInstruction(instruction.validation, drawingData);
-      this.lessonState.validationResults.set(instructionIndex, isValid);
+      // Validate answer
+      const result = await handler.validateAnswer(currentContent, answer, attemptCount);
       
-      if (!isValid) {
-        // Provide hint if validation fails
-        this.provideHint(instructionIndex);
-        return;
+      // Store answer and result
+      this.sessionData.answers.set(contentId, answer);
+      
+      if (result.isCorrect) {
+        // Award XP (with bonus for first attempt)
+        const xpEarned = attemptCount === 1 ? result.xpAwarded : Math.floor(result.xpAwarded * 0.5);
+        this.sessionData.score += xpEarned;
+        result.xpAwarded = xpEarned;
+        
+        console.log(`✅ Correct answer! +${xpEarned} XP (attempt ${attemptCount})`);
+      } else {
+        console.log(`❌ Incorrect answer (attempt ${attemptCount})`);
       }
-    }
 
-    // Progress to next instruction
-    const totalInstructions = this.currentLesson.practiceContent.instructions.length;
-    this.lessonState.currentInstruction = instructionIndex + 1;
-    this.lessonState.practiceProgress = ((instructionIndex + 1) / totalInstructions) * 100;
+      // Emit answer event
+      this.eventBus.emit('lesson:answer_submitted', {
+        lessonId: this.currentLesson.id,
+        contentId,
+        isCorrect: result.isCorrect,
+        attempt: attemptCount,
+        xpEarned: result.xpAwarded,
+      });
 
-    if (instructionIndex >= totalInstructions - 1) {
-      this.lessonState.phase = 'ready_for_assessment';
-    }
-
-    this.notifyListeners();
-  }
-
-  private validateInstruction(rule: ValidationRule, data: any): boolean {
-    const validator = this.practiceValidators.get(rule.type);
-    if (!validator) return true;
-    
-    return validator(rule, data);
-  }
-
-  private provideHint(instructionIndex: number): void {
-    if (!this.currentLesson) return;
-
-    const hints = this.currentLesson.practiceContent.hints;
-    const relevantHint = hints.find(hint => 
-      hint.triggerCondition === `instruction_${instructionIndex}_fail`
-    );
-
-    if (relevantHint) {
-      this.emitHint(relevantHint);
-    }
-  }
-
-  private emitHint(hint: any): void {
-    // This would integrate with the UI to show the hint
-    if (typeof window !== 'undefined' && (window as any).showHint) {
-      (window as any).showHint(hint);
-    }
-  }
-
-  public async completeLesson(assessmentData: any): Promise<LessonCompletionResult> {
-    if (!this.currentLesson || this.lessonState.phase !== 'ready_for_assessment') {
-      throw new Error('Cannot complete lesson in current state');
-    }
-
-    const assessmentResult = this.assessLesson(assessmentData);
-    const duration = Date.now() - (this.lessonState.startTime || 0) - this.lessonState.pausedTime;
-
-    // Calculate XP reward
-    let xpEarned: number = this.currentLesson.xpReward || this.currentLesson.rewards?.xp || 100;
-    if (assessmentResult.score >= 0.95) {
-      xpEarned *= 1.5; // Perfect score bonus
-    }
-
-    // Complete objectives
-    const completedObjectives = this.currentLesson.objectives.map(obj => ({
-      ...obj,
-      completed: assessmentResult.objectiveResults[obj.id] || false,
-    }));
-
-    // Save completion
-    await this.saveLessonCompletion({
-      lessonId: this.currentLesson.id,
-      score: assessmentResult.score,
-      duration,
-      xpEarned,
-      completedObjectives,
-      timestamp: Date.now(),
-    });
-
-    // Update progression
-    await progressionSystem.recordLessonCompletion(
-      this.currentLesson.id,
-      assessmentResult.score
-    );
-
-    this.lessonState.phase = 'completed';
-    this.notifyListeners();
-
-    return {
-      passed: assessmentResult.passed,
-      score: assessmentResult.score,
-      xpEarned,
-      duration,
-      feedback: assessmentResult.feedback,
-      nextLessonId: this.getNextLessonId(),
-    };
-  }
-
-  private assessLesson(data: any): AssessmentResult {
-    if (!this.currentLesson) {
-      throw new Error('No current lesson');
-    }
-
-    const assessment = this.currentLesson.assessment;
-    if (!assessment) {
-      // No assessment defined, return default passing result
+      return result;
+      
+    } catch (error) {
+      console.error('❌ Failed to submit answer:', error);
       return {
-        passed: true,
-        score: 0.8,
-        objectiveResults: {},
-        feedback: [],
+        isCorrect: false,
+        feedback: 'Error processing answer',
+        xpAwarded: 0,
       };
     }
+  }
 
-    let totalScore = 0;
-    let totalWeight = 0;
-    const objectiveResults: Record<string, boolean> = {};
-    const feedback: string[] = [];
+  public async nextContent(): Promise<boolean> {
+    if (!this.currentLesson || !this.lessonProgress) {
+      return false;
+    }
 
-    // Evaluate each criterion
-    assessment.criteria.forEach(criterion => {
-      const score = this.evaluateCriterion(criterion, data);
-      totalScore += score * criterion.weight;
-      totalWeight += criterion.weight;
+    this.contentIndex++;
+    this.lessonProgress.currentContentIndex = this.contentIndex;
+    this.lessonProgress.contentProgress = (this.contentIndex / this.currentLesson.content.length) * 100;
 
-      if (score < 0.7) {
-        feedback.push(`Need improvement: ${criterion.description}`);
-      } else if (score >= 0.9) {
-        feedback.push(`Excellent: ${criterion.description}`);
+    // Update time spent
+    const timeSpent = Date.now() - this.startTime;
+    this.lessonProgress.timeSpent = timeSpent;
+
+    console.log(`➡️ Moving to content ${this.contentIndex + 1}/${this.currentLesson.content.length}`);
+
+    // Check if lesson is complete
+    if (this.contentIndex >= this.currentLesson.content.length) {
+      return await this.completeLesson();
+    }
+
+    // Emit progress event
+    this.eventBus.emit('lesson:progress', {
+      lessonId: this.currentLesson.id,
+      contentIndex: this.contentIndex,
+      progress: this.lessonProgress.contentProgress,
+    });
+
+    return true;
+  }
+
+  public async previousContent(): Promise<boolean> {
+    if (this.contentIndex > 0) {
+      this.contentIndex--;
+      if (this.lessonProgress) {
+        this.lessonProgress.currentContentIndex = this.contentIndex;
+        this.lessonProgress.contentProgress = (this.contentIndex / (this.currentLesson?.content.length || 1)) * 100;
       }
-    });
+      return true;
+    }
+    return false;
+  }
 
-    const finalScore = totalWeight > 0 ? totalScore / totalWeight : 0;
-    const passed = finalScore >= assessment.passingScore;
+  // =================== LESSON COMPLETION ===================
 
-    // Check bonus objectives if they exist
-    if (assessment.bonusObjectives) {
-      assessment.bonusObjectives.forEach(bonus => {
-        if (this.evaluateBonusObjective(bonus, data)) {
-          feedback.push(`Bonus achieved: ${bonus.description} (+${bonus.xpBonus} XP)`);
-        }
+  private async completeLesson(): Promise<boolean> {
+    if (!this.currentLesson || !this.lessonProgress) {
+      return false;
+    }
+
+    try {
+      console.log(`🎉 Completing lesson: ${this.currentLesson.title}`);
+
+      // Calculate final score
+      const finalScore = Math.min(100, (this.sessionData.score / this.sessionData.maxScore) * 100);
+      
+      // Update progress
+      this.lessonProgress.completed = true;
+      this.lessonProgress.score = finalScore;
+      this.lessonProgress.timeSpent = Date.now() - this.startTime;
+      this.lessonProgress.completedAt = new Date().toISOString();
+
+      // Save lesson completion
+      await dataManager.saveLessonCompletion({
+        lessonId: this.currentLesson.id,
+        score: finalScore,
+        xpEarned: this.sessionData.score,
+        timeSpent: this.lessonProgress.timeSpent,
+        attempts: Object.fromEntries(this.sessionData.attempts),
+        completedAt: this.lessonProgress.completedAt,
       });
-    }
 
-    // Map to learning objectives
-    this.currentLesson.objectives.forEach(obj => {
-      objectiveResults[obj.id] = finalScore >= 0.7; // Simple mapping for now
-    });
+      // Emit completion event
+      this.eventBus.emit('lesson:completed', {
+        lessonId: this.currentLesson.id,
+        score: finalScore,
+        xpEarned: this.sessionData.score,
+        timeSpent: this.lessonProgress.timeSpent,
+        achievements: this.currentLesson.rewards.achievements || [],
+      });
 
-    return {
-      passed,
-      score: finalScore,
-      objectiveResults,
-      feedback,
-    };
-  }
-
-  private evaluateCriterion(criterion: any, data: any): number {
-    // Simplified evaluation - in production this would be more sophisticated
-    switch (criterion.evaluationType) {
-      case 'automatic':
-        // Use validation rules to score
-        return Math.random() * 0.3 + 0.7; // Placeholder
-      case 'self':
-        return data.selfAssessment?.[criterion.id] || 0.8;
-      case 'peer':
-        return data.peerAssessment?.[criterion.id] || 0.75;
-      default:
-        return 0.8;
+      console.log(`📊 Lesson completed - Score: ${finalScore}%, XP: ${this.sessionData.score}`);
+      return true;
+      
+    } catch (error) {
+      console.error('❌ Failed to complete lesson:', error);
+      return false;
     }
   }
 
-  private evaluateBonusObjective(bonus: any, data: any): boolean {
-    // Placeholder - would have specific logic per bonus type
-    return Math.random() > 0.7;
-  }
-
-  private async saveLessonCompletion(completion: any): Promise<void> {
-    const completions = await dataManager.get<any[]>('lesson_completions') || [];
-    completions.push(completion);
-    await dataManager.set('lesson_completions', completions);
-  }
-
-  private getNextLessonId(): string | undefined {
-    // This would check skill tree progression
-    return undefined; // Placeholder
-  }
+  // =================== LESSON MANAGEMENT ===================
 
   public pauseLesson(): void {
-    if (this.lessonState.phase === 'practice' || this.lessonState.phase === 'theory') {
-      this.lessonState.pausedTime += Date.now() - (this.lessonState.startTime || 0);
-      this.lessonState.phase = 'paused';
-      this.notifyListeners();
+    if (this.lessonProgress) {
+      this.lessonProgress.timeSpent = Date.now() - this.startTime;
+      this.eventBus.emit('lesson:paused', { lessonId: this.currentLesson?.id });
     }
   }
 
   public resumeLesson(): void {
-    if (this.lessonState.phase === 'paused') {
-      this.lessonState.startTime = Date.now();
-      this.lessonState.phase = this.lessonState.theoryProgress < 100 ? 'theory' : 'practice';
-      this.notifyListeners();
+    this.startTime = Date.now() - (this.lessonProgress?.timeSpent || 0);
+    this.eventBus.emit('lesson:resumed', { lessonId: this.currentLesson?.id });
+  }
+
+  public exitLesson(): void {
+    if (this.currentLesson && this.lessonProgress) {
+      this.lessonProgress.timeSpent = Date.now() - this.startTime;
+      // Save partial progress
+      dataManager.saveLessonProgress(this.lessonProgress);
+      this.eventBus.emit('lesson:exited', { lessonId: this.currentLesson.id });
     }
+    
+    this.currentLesson = null;
+    this.lessonProgress = null;
+    this.contentIndex = 0;
+    this.sessionData = {};
   }
 
-  public getCurrentLesson(): Lesson | null {
-    return this.currentLesson;
-  }
+  // =================== HELPER METHODS ===================
 
-  public getLessonState(): LessonState {
-    return { ...this.lessonState };
-  }
-
-  public subscribeToLessonState(callback: (state: LessonState) => void): () => void {
-    this.lessonListeners.add(callback);
-    callback(this.lessonState);
-    return () => this.lessonListeners.delete(callback);
-  }
-
-  private notifyListeners(): void {
-    this.lessonListeners.forEach(callback => callback(this.getLessonState()));
-  }
-
-  private async getCurrentUserId(): Promise<string> {
-    const user = await dataManager.getUserProfile();
-    return user?.id || 'anonymous';
-  }
-
-  private colorDistance(color1: string, color2: string): number {
-    // Simple RGB distance calculation
-    // In production, use proper color space conversion
-    return 0; // Placeholder
-  }
-
-  private calculateShapeAccuracy(strokes: any[], targetShape: any): number {
-    // Calculate how accurately the strokes match the target shape
-    // This would use computer vision or geometric algorithms
-    return 0.85; // Placeholder
-  }
-
-  // Real-time guidance system
-  public checkDrawingProgress(drawingData: any): GuidanceResponse {
-    if (!this.currentLesson || this.lessonState.phase !== 'practice') {
-      return { type: 'none' };
+  public getHint(contentId: string): string | null {
+    const content = this.getCurrentContent();
+    if (content && content.id === contentId) {
+      return content.hint || null;
     }
+    return null;
+  }
 
-    const currentInstruction = this.currentLesson.practiceContent.instructions[
-      this.lessonState.currentInstruction
-    ];
+  public canShowHint(contentId: string): boolean {
+    const attempts = this.sessionData.attempts.get(contentId) || 0;
+    return attempts >= 1; // Show hint after first wrong attempt
+  }
 
-    if (!currentInstruction) {
-      return { type: 'none' };
-    }
-
-    // Check if user needs help
-    const timeSinceStart = Date.now() - (this.lessonState.startTime || 0);
-    const expectedTime = currentInstruction.validation?.params?.expectedTime || 30000;
-
-    if (timeSinceStart > expectedTime * 1.5) {
-      return {
-        type: 'hint',
-        message: 'Take your time! Try following the guide overlay.',
-        showGuide: true,
-      };
-    }
-
-    // Check drawing accuracy
-    if (currentInstruction.validation) {
-      const isValid = this.validateInstruction(currentInstruction.validation, drawingData);
-      if (!isValid) {
-        return {
-          type: 'correction',
-          message: 'Almost there! Adjust your strokes to match the guide.',
-          highlightArea: currentInstruction.highlightArea,
-        };
+  public getContentStats(): {
+    completed: number;
+    total: number;
+    correctAnswers: number;
+    totalAttempts: number;
+  } {
+    const total = this.currentLesson?.content.length || 0;
+    const completed = this.contentIndex;
+    
+    let correctAnswers = 0;
+    let totalAttempts = 0;
+    
+    for (const [contentId, attempts] of this.sessionData.attempts.entries()) {
+      totalAttempts += attempts;
+      if (this.sessionData.answers.has(contentId)) {
+        correctAnswers++;
       }
     }
+    
+    return { completed, total, correctAnswers, totalAttempts };
+  }
+}
 
+// =================== CONTENT HANDLERS ===================
+
+interface ContentHandler {
+  validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult>;
+}
+
+class MultipleChoiceHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    const isCorrect = answer === content.correctAnswer;
+    
     return {
-      type: 'encouragement',
-      message: 'Great job! Keep going!',
+      isCorrect,
+      feedback: isCorrect ? 'Correct!' : content.explanation || 'Not quite right.',
+      explanation: content.explanation,
+      xpAwarded: content.xp || 10,
+      showHint: !isCorrect && attemptCount >= 1,
+      hint: content.hint,
     };
   }
 }
 
-interface LessonState {
-  phase: 'not_started' | 'theory' | 'ready_for_practice' | 'practice' | 
-         'ready_for_assessment' | 'completed' | 'paused';
-  theoryProgress: number;
-  practiceProgress: number;
-  startTime: number | null;
-  pausedTime: number;
-  completedObjectives: string[];
-  currentInstruction: number;
-  validationResults: Map<number, boolean>;
+class TrueFalseHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    const isCorrect = answer === content.correctAnswer;
+    
+    return {
+      isCorrect,
+      feedback: isCorrect ? 'Correct!' : 'Try again!',
+      explanation: content.explanation,
+      xpAwarded: content.xp || 8,
+      showHint: !isCorrect && attemptCount >= 1,
+      hint: content.hint,
+    };
+  }
 }
 
-interface LessonCompletionResult {
-  passed: boolean;
-  score: number;
-  xpEarned: number;
-  duration: number;
-  feedback: string[];
-  nextLessonId?: string;
+class ColorMatchHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    let isCorrect = false;
+    
+    if (typeof content.correctAnswer === 'number' && content.options) {
+      // Answer is index into options array
+      isCorrect = answer === content.options[content.correctAnswer];
+    } else {
+      // Direct color comparison
+      isCorrect = answer === content.correctAnswer;
+    }
+    
+    return {
+      isCorrect,
+      feedback: isCorrect ? 'Perfect color choice!' : 'Not the right color.',
+      explanation: content.explanation,
+      xpAwarded: content.xp || 15,
+      showHint: !isCorrect && attemptCount >= 1,
+      hint: content.hint,
+    };
+  }
 }
 
-interface AssessmentResult {
-  passed: boolean;
-  score: number;
-  objectiveResults: Record<string, boolean>;
-  feedback: string[];
+class VisualSelectionHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    // For image-based questions
+    const isCorrect = answer === content.correctAnswer;
+    
+    return {
+      isCorrect,
+      feedback: isCorrect ? 'Great eye!' : 'Look more carefully.',
+      explanation: content.explanation,
+      xpAwarded: content.xp || 12,
+      showHint: !isCorrect && attemptCount >= 1,
+      hint: content.hint,
+    };
+  }
 }
 
-interface GuidanceResponse {
-  type: 'none' | 'hint' | 'correction' | 'encouragement';
-  message?: string;
-  showGuide?: boolean;
-  highlightArea?: any;
+class DrawingExerciseHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    // Validate drawing based on the exercise type
+    const validation = content.validation;
+    if (!validation) {
+      return {
+        isCorrect: true,
+        feedback: 'Great practice!',
+        xpAwarded: content.xp || 15,
+      };
+    }
+
+    let isCorrect = false;
+    let feedback = '';
+
+    switch (validation.type) {
+      case 'line_count':
+        const lineCount = answer.strokes?.length || 0;
+        isCorrect = lineCount >= validation.target;
+        feedback = isCorrect 
+          ? `Perfect! You drew ${lineCount} lines.`
+          : `You need to draw ${validation.target} lines. You drew ${lineCount}.`;
+        break;
+        
+      case 'shape_accuracy':
+        const accuracy = this.calculateShapeAccuracy(answer.strokes, validation.target);
+        isCorrect = accuracy >= (validation.tolerance || 0.7);
+        feedback = isCorrect
+          ? `Excellent ${validation.target}!`
+          : `Keep practicing your ${validation.target} shape.`;
+        break;
+        
+      case 'shape_recognition':
+        const recognizedShapes = this.recognizeShapes(answer.strokes);
+        const requiredShapes = validation.targets || [];
+        isCorrect = requiredShapes.every(shape => recognizedShapes.includes(shape));
+        feedback = isCorrect
+          ? 'All shapes recognized!'
+          : `Try drawing: ${requiredShapes.join(', ')}`;
+        break;
+        
+      default:
+        isCorrect = true;
+        feedback = 'Good effort!';
+    }
+
+    return {
+      isCorrect,
+      feedback,
+      explanation: content.explanation,
+      xpAwarded: content.xp || 15,
+      showHint: !isCorrect && attemptCount >= 1,
+      hint: content.hint,
+    };
+  }
+
+  private calculateShapeAccuracy(strokes: any[], targetShape: string): number {
+    // Simplified shape accuracy calculation
+    // In production, this would use computer vision algorithms
+    if (!strokes || strokes.length === 0) return 0;
+    
+    const stroke = strokes[0];
+    const points = stroke.points || [];
+    
+    if (points.length < 3) return 0;
+    
+    switch (targetShape) {
+      case 'circle':
+        return this.calculateCircleAccuracy(points);
+      case 'line':
+        return this.calculateLineAccuracy(points);
+      case 'square':
+      case 'rectangle':
+        return this.calculateRectangleAccuracy(points);
+      default:
+        return 0.5; // Default moderate accuracy
+    }
+  }
+
+  private calculateCircleAccuracy(points: any[]): number {
+    // Simple circle accuracy: check if points form roughly circular pattern
+    if (points.length < 10) return 0.3;
+    
+    // Calculate center point
+    const centerX = points.reduce((sum, p) => sum + p.x, 0) / points.length;
+    const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length;
+    
+    // Calculate average radius
+    const distances = points.map(p => 
+      Math.sqrt(Math.pow(p.x - centerX, 2) + Math.pow(p.y - centerY, 2))
+    );
+    const avgRadius = distances.reduce((sum, d) => sum + d, 0) / distances.length;
+    
+    // Calculate variance in radius (lower = more circular)
+    const variance = distances.reduce((sum, d) => sum + Math.pow(d - avgRadius, 2), 0) / distances.length;
+    const normalizedVariance = variance / (avgRadius * avgRadius);
+    
+    // Convert to accuracy score (0-1)
+    return Math.max(0, Math.min(1, 1 - normalizedVariance * 5));
+  }
+
+  private calculateLineAccuracy(points: any[]): number {
+    if (points.length < 2) return 0;
+    
+    const startPoint = points[0];
+    const endPoint = points[points.length - 1];
+    
+    // Calculate how straight the line is
+    const idealDistance = Math.sqrt(
+      Math.pow(endPoint.x - startPoint.x, 2) + Math.pow(endPoint.y - startPoint.y, 2)
+    );
+    
+    if (idealDistance < 10) return 0.3; // Too short
+    
+    // Calculate total path distance
+    let totalDistance = 0;
+    for (let i = 1; i < points.length; i++) {
+      totalDistance += Math.sqrt(
+        Math.pow(points[i].x - points[i-1].x, 2) + Math.pow(points[i].y - points[i-1].y, 2)
+      );
+    }
+    
+    // Straightness = ideal distance / actual distance
+    const straightness = idealDistance / totalDistance;
+    return Math.max(0, Math.min(1, straightness));
+  }
+
+  private calculateRectangleAccuracy(points: any[]): number {
+    // Simplified rectangle detection
+    if (points.length < 8) return 0.3;
+    
+    // For now, just check if it's roughly rectangular in bounding box
+    const minX = Math.min(...points.map(p => p.x));
+    const maxX = Math.max(...points.map(p => p.x));
+    const minY = Math.min(...points.map(p => p.y));
+    const maxY = Math.max(...points.map(p => p.y));
+    
+    const width = maxX - minX;
+    const height = maxY - minY;
+    
+    if (width < 20 || height < 20) return 0.3; // Too small
+    
+    // Basic rectangle = has width and height
+    return 0.7; // Moderate score for basic rectangle
+  }
+
+  private recognizeShapes(strokes: any[]): string[] {
+    const shapes: string[] = [];
+    
+    for (const stroke of strokes) {
+      const points = stroke.points || [];
+      if (points.length < 3) continue;
+      
+      const circleAccuracy = this.calculateCircleAccuracy(points);
+      const lineAccuracy = this.calculateLineAccuracy(points);
+      const rectAccuracy = this.calculateRectangleAccuracy(points);
+      
+      if (circleAccuracy > 0.6) shapes.push('circle');
+      else if (lineAccuracy > 0.7) shapes.push('line');
+      else if (rectAccuracy > 0.6) shapes.push('rectangle');
+    }
+    
+    return shapes;
+  }
 }
 
-type ValidationFunction = (rule: ValidationRule, data: any) => boolean;
+class GuidedStepHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    // For guided steps, use drawing validation
+    const drawingHandler = new DrawingExerciseHandler();
+    return drawingHandler.validateAnswer(content, answer, attemptCount);
+  }
+}
+
+class ShapePracticeHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    // Similar to drawing exercise but focused on shapes
+    const drawingHandler = new DrawingExerciseHandler();
+    return drawingHandler.validateAnswer(content, answer, attemptCount);
+  }
+}
+
+class VideoLessonHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    // For video lessons, validate based on interaction type
+    return {
+      isCorrect: true,
+      feedback: 'Video completed!',
+      xpAwarded: content.xp || 5,
+    };
+  }
+}
+
+class AssessmentHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    // Comprehensive assessment validation
+    const isCorrect = answer === content.correctAnswer;
+    
+    return {
+      isCorrect,
+      feedback: isCorrect ? 'Excellent work!' : 'Review the material and try again.',
+      explanation: content.explanation,
+      xpAwarded: content.xp || 20,
+      showHint: false, // No hints in assessments
+    };
+  }
+}
+
+class PortfolioProjectHandler implements ContentHandler {
+  async validateAnswer(content: LessonContent, answer: any, attemptCount: number): Promise<ValidationResult> {
+    // Portfolio projects are always "correct" but scored on effort
+    return {
+      isCorrect: true,
+      feedback: 'Great addition to your portfolio!',
+      xpAwarded: content.xp || 50,
+    };
+  }
+}
 
 // Export singleton instance
 export const lessonEngine = LessonEngine.getInstance();

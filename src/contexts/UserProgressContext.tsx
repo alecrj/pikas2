@@ -33,6 +33,7 @@ export interface User {
   skillLevel: SkillLevel;
   joinedDate: string;
   lastActiveDate: string;
+  learningGoals?: string[]; // Added for onboarding compatibility
   preferences: {
     notifications: boolean;
     darkMode: boolean;
